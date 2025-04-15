@@ -1,8 +1,12 @@
 # KoboldJSBench
 Benchmarking Local LLMs using Koboldcpp on Javascript
 
+# View the current results
+This is the output from the current 4 prompts.   
+* [Results 2025.04.15](https://makeplayhappy.github.io/KoboldJSBench/results/2025.04.15/)
 
-# 🚀 KoboldCpp LLM Benchmark Suite 🚀
+
+#  KoboldCpp LLM Benchmark Suite 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) <!-- Optional: Add a license badge if you have one -->
 
@@ -44,7 +48,7 @@ Stop guessing, start measuring! 📊
     *   It waits briefly before starting the **next** model.
 4.  **Extract (Optional):** Run `extract_html.py` to scan the `results` folder and pull out any complete HTML blocks into `.html` files for easy browser viewing.
 
-## 🚀 Getting Started 🚀
+##  Getting Started 
 
 ### Prerequisites
 
@@ -77,7 +81,7 @@ Stop guessing, start measuring! 📊
 
 3.  **Prepare Your Models & Prompts:** Ensure your `.gguf` files are in the `MODEL_DIR` and your `.md` prompt files are in the `PROMPT_DIR`.
 
-## ⚡ Usage ⚡
+##  Usage 
 
 ### Running the Benchmarks
 
