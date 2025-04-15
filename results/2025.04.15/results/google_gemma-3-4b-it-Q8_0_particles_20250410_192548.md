@@ -1,0 +1,129 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Particle Emitter</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        class Particle {
+            constructor(x, y, vx, vy, lifespan, color, size) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.lifespan = lifespan;
+                this.color = color;
+                this.size = size;
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                this.lifespan -= deltaTime;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        let particles = [];
+        let emissionActive = false;
+        let lastX = 0;
+        let lastY = 0;
+        let emissionInterval = 0;
+        const emissionRate = 10; // Particles per second
+
+        function emitParticles(x, y) {
+            for (let i = 0; i < Math.floor(Math.random() * 20 + 10); i++) {
+                const angle = Math.random() * 2 * Math.PI;
+                const speed = Math.random() * 5 + 2; // Speed between 2 and 7
+                const lifespan = Math.random() * 2 + 1; // Lifespan between 1 and 3
+                const color = `rgb(${Math.floor(Math.random() * 255)}, ${Math.floor(Math.random() * 255)}, ${Math.floor(Math.random() * 255)})`;
+                const size = Math.floor(Math.random() * 3) + 2; // Size between 2 and 5
+
+                particles.push(new Particle(x, y, speed * Math.cos(angle), speed * Math.sin(angle), lifespan, color, size));
+            }
+        }
+
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            lastX = event.clientX - rect.left;
+            lastY = event.clientY - rect.top;
+            emissionActive = true;
+            emissionInterval = 0;
+        });
+
+        canvas.addEventListener('mousemove', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            if (emissionActive) {
+                emitParticles(x, y);
+                emissionInterval += 0.02; // Adjust for emission rate
+            }
+        });
+
+        canvas.addEventListener('mouseout', () => {
+            emissionActive = false;
+        });
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            // Update particles
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update(0.016); // 60fps
+                if (particles[i].lifespan <= 0) {
+                    particles.splice(i, 1);
+                    i--; // Adjust index after removing an element
+                }
+            }
+
+            // Draw particles
+            particles.forEach(particle => particle.draw());
+
+            emissionInterval += 0.016;
+            if(emissionInterval > 0.2){
+                emissionInterval = 0;
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+        // notes
+        document.getElementById('notes').innerHTML = `
+            This code creates a particle emitter that spawns particles from mouse clicks.
+            Particles have random velocity, lifespan, color, and size.
+            The emission is continuous while the mouse is held down.
+            The update loop removes particles that have expired.
+            Delta time is used to ensure smooth animations regardless of frame rate.
+            The emission rate is controlled by the emissionRate variable.
+        `;
+    </script>
+</body>
+</html>
+```
+ <!-- 26.59s -->

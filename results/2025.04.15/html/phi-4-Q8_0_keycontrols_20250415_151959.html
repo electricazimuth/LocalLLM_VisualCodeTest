@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        class Player {
+            constructor(x, y, width, height, speed) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.speed = speed;
+                this.velocityX = 0;
+                this.velocityY = 0;
+                this.onGround = true;
+                this.facingRight = true;
+            }
+
+            update(deltaTime) {
+                // Acceleration/Deceleration
+                if (this.velocityX > 0) {
+                    this.velocityX -= 0.5 * deltaTime;
+                } else if (this.velocityX < 0) {
+                    this.velocityX += 0.5 * deltaTime;
+                }
+
+                // Apply gravity
+                if (!this.onGround) {
+                    this.velocityY += 0.5 * deltaTime;
+                }
+
+                // Update position
+                this.x += this.velocityX * deltaTime;
+                this.y += this.velocityY * deltaTime;
+
+                // Boundary checks
+                if (this.x < 0) {
+                    this.x = 0;
+                    this.velocityX = 0;
+                } else if (this.x + this.width > W) {
+                    this.x = W - this.width;
+                    this.velocityX = 0;
+                }
+
+                if (this.y + this.height > H) {
+                    this.y = H - this.height;
+                    this.velocityY = 0;
+                    this.onGround = true;
+                }
+
+                // Update facing direction
+                if (this.velocityX > 0) {
+                    this.facingRight = true;
+                } else if (this.velocityX < 0) {
+                    this.facingRight = false;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = this.facingRight ? 'blue' : 'red';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+
+                // Draw eye indicator
+                ctx.fillStyle = 'black';
+                const eyeX = this.facingRight ? this.x + this.width - 10 : this.x + 10;
+                ctx.beginPath();
+                ctx.arc(eyeX, this.y + this.height / 2, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            jump() {
+                if (this.onGround) {
+                    this.velocityY = -10;
+                    this.onGround = false;
+                }
+            }
+        }
+
+        const player = new Player(100, H - 60, 50, 50, 5);
+        let lastTime = 0;
+        const keys = {};
+
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            ctx.clearRect(0, 0, W, H);
+
+            // Update player
+            player.update(deltaTime);
+
+            // Handle input
+            if (keys['ArrowLeft'] || keys['a']) {
+                player.velocityX = -player.speed;
+            } else if (keys['ArrowRight'] || keys['d']) {
+                player.velocityX = player.speed;
+            } else {
+                player.velocityX = 0;
+            }
+
+            if (keys[' '] && player.onGround) {
+                player.jump();
+            }
+
+            // Draw player
+            player.draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function handleKeyDown(event) {
+            keys[event.key] = true;
+        }
+
+        function handleKeyUp(event) {
+            keys[event.key] = false;
+        }
+
+        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('keyup', handleKeyUp);
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <!--
+        - Player class manages position, velocity, and drawing.
+        - Game loop handles updating and drawing.
+        - Key events manage player input.
+        - Gravity and boundary checks are implemented.
+        - Acceleration and deceleration are handled.
+        -->
+    </section>
+</body>
+</html>

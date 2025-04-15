@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Physics constants
+        const gravity = 0.5;
+        const damping = 0.8;
+
+        // Ball properties
+        const minRadius = 10;
+        const maxRadius = 30;
+        const ballCount = 50;
+
+        class Ball {
+            constructor(x, y, radius, mass, color, vx, vy) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.mass = mass;
+                this.color = color;
+                this.vx = vx;
+                this.vy = vy;
+            }
+
+            update() {
+                this.vy += gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            checkWallCollisions() {
+                if (this.x - this.radius < 0 || this.x + this.radius > W) {
+                    this.vx = -this.vx * damping;
+                }
+                if (this.y - this.radius < 0 || this.y + this.radius > H) {
+                    this.vy = -this.vy * damping;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        function createBalls(count) {
+            const balls = [];
+            for (let i = 0; i < count; i++) {
+                const radius = Math.random() * (maxRadius - minRadius) + minRadius;
+                const mass = Math.PI * Math.pow(radius, 2); // area as mass
+                const x = Math.random() * (W - 2 * radius) + radius;
+                const y = Math.random() * (H - 2 * radius) + radius;
+                const vx = Math.random() * 4 - 2; // random velocity in x
+                const vy = Math.random() * 4 - 2; // random velocity in y
+                const color = `hsl(${Math.random() * 360}, 50%, 50%)`;
+                balls.push(new Ball(x, y, radius, mass, color, vx, vy));
+            }
+            return balls;
+        }
+
+        function handleCollisions(balls) {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    const ballA = balls[i];
+                    const ballB = balls[j];
+
+                    const dx = ballB.x - ballA.x;
+                    const dy = ballB.y - ballA.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDistance = ballA.radius + ballB.radius;
+
+                    if (distance < minDistance) {
+                        const overlap = minDistance - distance;
+                        const nx = dx / distance;
+                        const ny = dy / distance;
+
+                        ballA.x -= nx * overlap / 2;
+                        ballA.y -= ny * overlap / 2;
+                        ballB.x += nx * overlap / 2;
+                        ballB.y += ny * overlap / 2;
+
+                        const relativeVx = ballB.vx - ballA.vx;
+                        const relativeVy = ballB.vy - ballA.vy;
+                        const dotProduct = relativeVx * nx + relativeVy * ny;
+
+                        if (dotProduct > 0) continue;
+
+                        const impulse = (2 * ballA.mass * ballB.mass * dotProduct) / (ballA.mass + ballB.mass);
+                        const impulsePerMassA = impulse / ballA.mass;
+                        const impulsePerMassB = -impulse / ballB.mass;
+
+                        ballA.vx += impulsePerMassA * nx;
+                        ballA.vy += impulsePerMassA * ny;
+                        ballB.vx += impulsePerMassB * nx;
+                        ballB.vy += impulsePerMassB * ny;
+                    }
+                }
+            }
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, W, H);
+
+            for (let ball of balls) {
+                ball.update();
+                ball.checkWallCollisions();
+            }
+
+            handleCollisions(balls);
+
+            for (let ball of balls) {
+                ball.draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        let balls = createBalls(ballCount);
+
+        gameLoop();
+
+    </script>
+</body>
+</html>

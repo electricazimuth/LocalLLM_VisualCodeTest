@@ -1,0 +1,94 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Turret Shooting</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const turretX = W / 2;
+        const turretY = H - 50;
+        const turretWidth = 50;
+        const turretHeight = 50;
+        const projectileSize = 10;
+        const projectileSpeed = 5;
+        const projectileCooldown = 500; // milliseconds
+        let lastFired = 0;
+        let projectiles = [];
+
+        function drawTurret() {
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(turretX - turretWidth / 2, turretY - turretHeight / 2, turretWidth, turretHeight);
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.moveTo(turretX, turretY);
+            ctx.lineTo(turretX + Math.cos(angle) * 100, turretY + Math.sin(angle) * 100);
+            ctx.stroke();
+        }
+
+        function drawProjectiles() {
+            projectiles.forEach(projectile => {
+                ctx.fillStyle = 'green';
+                ctx.beginPath();
+                ctx.arc(projectile.x, projectile.y, projectileSize, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function updateProjectiles() {
+            projectiles.forEach(projectile => {
+                projectile.x += projectile.vx;
+                projectile.y += projectile.vy;
+                if (projectile.x < 0 || projectile.x > W || projectile.y < 0 || projectile.y > H) {
+                    projectiles.splice(projectiles.indexOf(projectile), 1);
+                }
+            });
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+            drawTurret();
+            drawProjectiles();
+            updateProjectiles();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function fireProjectile(mouseX, mouseY) {
+            const dx = mouseX - turretX;
+            const dy = mouseY - turretY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const vx = dx / distance * projectileSpeed;
+            const vy = dy / distance * projectileSpeed;
+            projectiles.push({ x: turretX, y: turretY, vx, vy });
+        }
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const now = Date.now();
+            if (now - lastFired > projectileCooldown) {
+                fireProjectile(mouseX, mouseY);
+                lastFired = now;
+            }
+        });
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This simple game demonstrates a turret aiming at the mouse cursor and firing projectiles towards it. The projectiles move in a straight line and are removed when they go off-screen. The firing rate is limited by a cooldown.
+    </section>
+</body>
+</html>
+```
+ <!-- 19.09s -->

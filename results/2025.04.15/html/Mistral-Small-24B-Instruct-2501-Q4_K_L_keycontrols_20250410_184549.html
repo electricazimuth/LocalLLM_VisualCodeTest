@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+            ArrowUp: false,
+            w: false,
+            a: false,
+            d: false,
+            s: false,
+        };
+
+        const player = {
+            x: W / 2,
+            y: H - 50,
+            width: 50,
+            height: 50,
+            speed: 0,
+            jumpSpeed: 0,
+            gravity: 0.5,
+            jumpPower: 10,
+            maxSpeed: 5,
+            acceleration: 0.5,
+            deceleration: 0.9,
+            facingRight: true,
+        };
+
+        function drawPlayer() {
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Optional animation: Indicate facing direction
+            if (keys.ArrowRight || keys.d) {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(player.x + player.width - 5, player.y + player.height / 2 - 5, 5, 5);
+                player.facingRight = true;
+            } else if (keys.ArrowLeft || keys.a) {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(player.x, player.y + player.height / 2 - 5, 5, 5);
+                player.facingRight = false;
+            }
+        }
+
+        function updatePlayer() {
+            // Horizontal movement
+            if (keys.ArrowRight || keys.d) {
+                player.speed += player.acceleration;
+            } else if (keys.ArrowLeft || keys.a) {
+                player.speed -= player.acceleration;
+            } else {
+                player.speed *= player.deceleration;
+            }
+
+            // Clamp speed
+            player.speed = Math.max(Math.min(player.speed, player.maxSpeed), -player.maxSpeed);
+
+            // Update position
+            player.x += player.speed;
+
+            // Boundary checks
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > W) player.x = W - player.width;
+
+            // Vertical movement (jumping)
+            if ((keys.ArrowUp || keys.w) && player.jumpSpeed === 0) {
+                player.jumpSpeed = -player.jumpPower;
+            }
+
+            // Apply gravity
+            player.jumpSpeed += player.gravity;
+            player.y += player.jumpSpeed;
+
+            // Ground check
+            if (player.y + player.height > H) {
+                player.y = H - player.height;
+                player.jumpSpeed = 0;
+            }
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            updatePlayer();
+            drawPlayer();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        document.addEventListener('keydown', (event) => {
+            keys[event.code] = true;
+        });
+
+        document.addEventListener('keyup', (event) => {
+            keys[event.code] = false;
+        });
+
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <!-- Notes: -->
+        <!-- This code sets up a simple character that can move left and right using arrow keys or WASD keys. -->
+        <!-- It includes jumping, acceleration, and deceleration, and handles multiple key presses simultaneously. -->
+        <!-- Optional animation indicates the direction the character is facing. -->
+    </section>
+</body>
+</html>

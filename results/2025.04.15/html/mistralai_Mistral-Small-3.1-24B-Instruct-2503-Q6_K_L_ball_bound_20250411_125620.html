@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const gravityValue = 0.5;
+        const dampingFactor = 0.8;
+
+        class Ball {
+            constructor(x, y, vx, vy, r, color, mass) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = r;
+                this.color = color;
+                this.mass = mass;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            updatePosition() {
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            applyGravity() {
+                this.vy += gravityValue;
+            }
+        }
+
+        const balls = [];
+        const numBalls = 50;
+
+        function initBalls() {
+            for (let i = 0; i < numBalls; i++) {
+                const radius = Math.random() * 10 + 5;
+                const x = radius + Math.random() * (W - 2 * radius);
+                const y = radius + Math.random() * (H - 2 * radius);
+                const vx = (Math.random() - 0.5) * 2;
+                const vy = (Math.random() - 0.5) * 2;
+                const color = `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`;
+                const mass = radius * radius;
+                balls.push(new Ball(x, y, vx, vy, radius, color, mass));
+            }
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, W, H);
+        }
+
+        function handleWallCollisions(ball) {
+            if (ball.x - ball.r < 0 || ball.x + ball.r > W) {
+                ball.vx *= -dampingFactor;
+                if (ball.x - ball.r < 0) ball.x = ball.r;
+                if (ball.x + ball.r > W) ball.x = W - ball.r;
+            }
+
+            if (ball.y - ball.r < 0 || ball.y + ball.r > H) {
+                ball.vy *= -dampingFactor;
+                if (ball.y - ball.r < 0) ball.y = ball.r;
+                if (ball.y + ball.r > H) ball.y = H - ball.r;
+            }
+        }
+
+        function handleBallCollisions(ball1, ball2) {
+            const dx = ball2.x - ball1.x;
+            const dy = ball2.y - ball1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < ball1.r + ball2.r) {
+                const angle = Math.atan2(dy, dx);
+                const m1 = ball1.mass;
+                const m2 = ball2.mass;
+                const v1 = { x: ball1.vx, y: ball1.vy };
+                const v2 = { x: ball2.vx, y: ball2.vy };
+
+                const direction1 = {
+                    x: Math.cos(angle),
+                    y: Math.sin(angle)
+                };
+                const direction2 = { x: direction1.y, y: -direction1.x };
+
+                const v1Final = {
+                    x: (direction1.x * (v1.x * direction1.x + v1.y * direction1.y - v2.x * direction2.x - v2.y * direction2.y)) * ((m1 - m2) / (m1 + m2)) + v2.x * direction2.x + v2.y * direction2.y,
+                    y: (direction1.y * (v1.x * direction1.x + v1.y * direction1.y - v2.x * direction2.x - v2.y * direction2.y)) * ((m1 - m2) / (m1 + m2)) + v2.x * direction2.y + v2.y * direction2.x
+                };
+                const v2Final = {
+                    x: (direction2.x * (v2.x * direction2.x + v2.y * direction2.y - v1.x * direction1.x - v1.y * direction1.y)) * ((m2 - m1) / (m1 + m2)) + v1.x * direction1.x + v1.y * direction1.y,
+                    y: (direction2.y * (v2.x * direction2.x + v2.y * direction2.y - v1.x * direction1.x - v1.y * direction1.y)) * ((m2 - m1) / (m1 + m2)) + v1.x * direction1.y + v1.y * direction1.x
+                };
+
+                ball1.vx = v1Final.x * direction1.x + v1Final.y * direction1.y;
+                ball1.vy = v1Final.x * direction2.x + v1Final.y * direction2.y;
+                ball2.vx = v2Final.x * direction2.x + v2Final.y * direction2.y;
+                ball2.vy = v2Final.x * direction1.x + v2Final.y * direction1.y;
+
+                const overlap = 0.5 * (ball1.r + ball2.r - distance);
+                ball1.x -= overlap * direction1.x;
+                ball1.y -= overlap * direction1.y;
+                ball2.x += overlap * direction1.x;
+                ball2.y += overlap * direction1.y;
+            }
+        }
+
+        function gameLoop(timestamp) {
+            clearCanvas();
+
+            balls.forEach(ball => {
+                ball.applyGravity();
+                ball.updatePosition();
+                handleWallCollisions(ball);
+            });
+
+            balls.forEach((ball1, i) => {
+                for (let j = i + 1; j < balls.length; j++) {
+                    handleBallCollisions(ball1, balls[j]);
+                }
+            });
+
+            balls.forEach(ball => {
+                ball.draw(ctx);
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        initBalls();
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h3>Notes:</h3>
+        <ul>
+            <li>Gravity is applied to each ball in the vertical direction.</li>
+            <li>Collisions with walls are handled with damping to simulate energy loss.</li>
+            <li>Ball-to-ball collisions are detected using distance and handled with a simplified impulse response.</li>
+            <li>Performance considerations: The current implementation uses an O(n^2) collision detection method. Optimization techniques like spatial partitioning (e.g., quadtrees) could be implemented for better performance with a larger number of balls.</li>
+        </ul>
+    </section>
+</body>
+</html>

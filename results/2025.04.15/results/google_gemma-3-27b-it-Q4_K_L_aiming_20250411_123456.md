@@ -1,0 +1,149 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Turret Shooting</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        // Turret properties
+        const turretX = W / 2;
+        const turretY = H - 50;
+        const barrelLength = 30;
+
+        // Projectile properties
+        const projectileSize = 5;
+        const projectileSpeed = 5;
+        const projectileLifespan = 60; // Frames
+        const projectileColor = 'red';
+
+        // Projectile class
+        class Projectile {
+            constructor(x, y, vx, vy, lifespan) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.lifespan = lifespan;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.lifespan--;
+            }
+
+            draw() {
+                ctx.fillStyle = projectileColor;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, projectileSize, 0, 2 * Math.PI);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            isAlive() {
+                return this.lifespan > 0 && this.x > 0 && this.x < W && this.y > 0 && this.y < H;
+            }
+        }
+
+        let projectiles = [];
+        let lastFireTime = 0;
+        const fireCooldown = 20; // Frames
+        let mouseX = 0;
+        let mouseY = 0;
+
+        canvas.addEventListener('mousemove', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = event.clientX - rect.left;
+            mouseY = event.clientY - rect.top;
+        });
+
+        canvas.addEventListener('click', (event) => {
+            const now = performance.now();
+            if (now - lastFireTime > fireCooldown) {
+                const dx = mouseX - turretX;
+                const dy = mouseY - turretY;
+                const angle = Math.atan2(dy, dx);
+                const vx = Math.cos(angle) * projectileSpeed;
+                const vy = Math.sin(angle) * projectileSpeed;
+
+                const projectile = new Projectile(turretX, turretY, vx, vy, projectileLifespan);
+                projectiles.push(projectile);
+                lastFireTime = now;
+            }
+        });
+
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            // Update projectiles
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                projectiles[i].update();
+                if (!projectiles[i].isAlive()) {
+                    projectiles.splice(i, 1);
+                } else {
+                    projectiles[i].draw();
+                }
+            }
+
+            // Calculate angle to mouse
+            const dx = mouseX - turretX;
+            const dy = mouseY - turretY;
+            const angle = Math.atan2(dy, dx);
+
+            // Draw turret
+            ctx.fillStyle = 'gray';
+            ctx.fillRect(turretX - 10, turretY - 10, 20, 20);
+
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(turretX, turretY);
+            ctx.lineTo(turretX + barrelLength * Math.cos(angle), turretY + barrelLength * Math.sin(angle));
+            ctx.stroke();
+            ctx.closePath();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+        <p>This code implements a basic turret shooting game with the following features:</p>
+        <ul>
+            <li>Turret at the bottom center of the canvas</li>
+            <li>Projectiles fired towards the mouse cursor</li>
+            <li>Projectile velocity calculation using trigonometry (atan2, cos, sin)</li>
+            <li>Projectile lifespan and removal</li>
+            <li>Firing rate limit (cooldown)</li>
+            <li>Mouse input handling (position and clicks)</li>
+        </ul>
+        <p>Further improvements could include:</p>
+        <ul>
+            <li>Collision detection with targets</li>
+            <li>More complex projectile behavior (e.g., gravity)</li>
+            <li>Different turret types and projectiles</li>
+            <li>Game scoring and user interface</li>
+        </ul>
+    </section>
+</body>
+</html>
+```
+ <!-- 106.38s -->

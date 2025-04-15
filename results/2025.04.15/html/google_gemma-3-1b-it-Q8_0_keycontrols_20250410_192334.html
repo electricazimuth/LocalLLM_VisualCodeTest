@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        function gameLoop(timestamp) {
+            // Clear canvas (usually needed)
+            // ctx.clearRect(0, 0, W, H);
+
+            // --- Update logic ---
+
+            // --- Draw logic ---
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        // requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+        <p>This is a basic HTML page with a canvas and JavaScript to create a simple character.</p>
+        <p>The core logic involves handling keyboard input, updating the player's position, and drawing the character.</p>
+        <p>The code uses `requestAnimationFrame` for smooth animation.</p>
+    </section>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Turret Shooting</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Turret properties
+        const turretX = W / 2;
+        const turretY = H - 50;
+        const turretWidth = 50;
+        const turretHeight = 20;
+        let barrelAngle = 0;
+
+        // Projectiles array
+        const projectiles = [];
+
+        // Mouse position
+        let mouseX = W / 2;
+        let mouseY = H / 2;
+
+        // Firing cooldown
+        let lastFireTime = 0;
+        const fireCooldown = 300; // milliseconds
+
+        // Function to calculate angle between two points
+        function calculateAngle(x1, y1, x2, y2) {
+            return Math.atan2(y2 - y1, x2 - x1);
+        }
+
+        // Projectile class
+        class Projectile {
+            constructor(x, y, angle, speed) {
+                this.x = x;
+                this.y = y;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.size = 5;
+                this.color = 'red';
+                this.lifetime = 200;
+                this.age = 0;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.age++;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+
+            isOffScreen() {
+                return this.x < 0 || this.x > W || this.y < 0 || this.y > H || this.age > this.lifetime;
+            }
+        }
+
+        // Mouse move event listener to track mouse position
+        canvas.addEventListener('mousemove', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = event.clientX - rect.left;
+            mouseY = event.clientY - rect.top;
+        });
+
+        // Mouse click event listener to fire projectiles
+        canvas.addEventListener('click', () => {
+            if (Date.now() - lastFireTime > fireCooldown) {
+                const angle = calculateAngle(turretX, turretY, mouseX, mouseY);
+                const speed = 10;
+                const projectile = new Projectile(turretX, turretY, angle, speed);
+                projectiles.push(projectile);
+                lastFireTime = Date.now();
+            }
+        });
+
+        // Game loop
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update barrel angle towards mouse
+            barrelAngle = calculateAngle(turretX, turretY, mouseX, mouseY);
+
+            // Draw turret base
+            ctx.fillStyle = 'gray';
+            ctx.fillRect(turretX - turretWidth / 2, turretY - turretHeight / 2, turretWidth, turretHeight);
+
+            // Draw turret barrel
+            ctx.beginPath();
+            ctx.moveTo(turretX, turretY);
+            ctx.lineTo(turretX + Math.cos(barrelAngle) * 50, turretY + Math.sin(barrelAngle) * 50);
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 5;
+            ctx.stroke();
+
+            // Update and draw projectiles
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                projectiles[i].update();
+                projectiles[i].draw();
+                if (projectiles[i].isOffScreen()) {
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            // Request next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <p>Simple aiming and firing mechanism webgame using HTML, CSS, and JavaScript. Features include mouse input handling, vector math for aiming, projectile management, firing cooldown, and projectile lifespan.</p>
+    </section>
+</body>
+</html>

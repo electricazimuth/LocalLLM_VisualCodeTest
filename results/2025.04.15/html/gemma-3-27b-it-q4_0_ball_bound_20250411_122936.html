@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const numBalls = 50;
+        const gravityValue = 0.2;
+        const dampingFactor = 0.8;
+        const gridWidth = 40;
+        const gridHeight = 40;
+
+        class Ball {
+            constructor(x, y, r, color) {
+                this.x = x;
+                this.y = y;
+                this.r = r;
+                this.color = color;
+                this.vx = (Math.random() - 0.5) * 5;
+                this.vy = (Math.random() - 0.5) * 5;
+                this.mass = r * r;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+
+            update() {
+                this.vy += gravityValue;
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            collideWall() {
+                if (this.x + this.r > W || this.x - this.r < 0) {
+                    this.vx = -this.vx * dampingFactor;
+                    if (this.x + this.r > W) {
+                        this.x = W - this.r;
+                    } else {
+                        this.x = this.r;
+                    }
+                }
+                if (this.y + this.r > H || this.y - this.r < 0) {
+                    this.vy = -this.vy * dampingFactor;
+                    if (this.y + this.r > H) {
+                        this.y = H - this.r;
+                    } else {
+                        this.y = this.r;
+                    }
+                }
+            }
+        }
+
+        let balls = [];
+        let grid = [];
+
+        function initializeBalls() {
+            for (let i = 0; i < numBalls; i++) {
+                let r = Math.random() * 15 + 5;
+                let x = Math.random() * (W - 2 * r) + r;
+                let y = Math.random() * (H - 2 * r) + r;
+                let color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+                balls.push(new Ball(x, y, r, color));
+            }
+        }
+
+        function createGrid() {
+            for (let i = 0; i < Math.floor(W / gridWidth); i++) {
+                grid[i] = [];
+                for (let j = 0; j < Math.floor(H / gridHeight); j++) {
+                    grid[i][j] = [];
+                }
+            }
+        }
+
+        function addToGrid() {
+            for (let i = 0; i < balls.length; i++) {
+                let ball = balls[i];
+                let gridX = Math.floor(ball.x / gridWidth);
+                let gridY = Math.floor(ball.y / gridHeight);
+                grid[gridX][gridY].push(ball);
+            }
+        }
+
+        function clearGrid() {
+            for (let i = 0; i < grid.length; i++) {
+                for (let j = 0; j < grid[i].length; j++) {
+                    grid[i][j] = [];
+                }
+            }
+        }
+
+        function collideBalls() {
+            for (let i = 0; i < balls.length; i++) {
+                let ball1 = balls[i];
+                let gridX1 = Math.floor(ball1.x / gridWidth);
+                let gridY1 = Math.floor(ball1.y / gridHeight);
+
+                // Check nearby grid cells
+                for (let xOffset = -1; xOffset <= 1; xOffset++) {
+                    for (let yOffset = -1; yOffset <= 1; yOffset++) {
+                        let checkX = gridX1 + xOffset;
+                        let checkY = gridY1 + yOffset;
+
+                        if (checkX >= 0 && checkX < grid.length && checkY >= 0 && checkY < grid[0].length) {
+                            for (let j = 0; j < grid[checkX][checkY].length; j++) {
+                                let ball2 = grid[checkX][checkY][j];
+                                if (ball1 !== ball2) {
+                                    let dx = ball2.x - ball1.x;
+                                    let dy = ball2.y - ball1.y;
+                                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                                    if (distance < ball1.r + ball2.r) {
+                                        // Collision detected!
+                                        resolveCollision(ball1, ball2);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function resolveCollision(ball1, ball2) {
+            let dx = ball2.x - ball1.x;
+            let dy = ball2.y - ball1.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+
+            let overlap = (ball1.r + ball2.r) - distance;
+
+            let angle = Math.atan2(dy, dx);
+            let separationX = overlap * Math.cos(angle);
+            let separationY = overlap * Math.sin(angle);
+
+            ball1.x -= separationX / 2;
+            ball1.y -= separationY / 2;
+            ball2.x += separationX / 2;
+            ball2.y += separationY / 2;
+
+            // Simple elastic collision response
+            let v1x = ball1.vx;
+            let v1y = ball1.vy;
+            let v2x = ball2.vx;
+            let v2y = ball2.vy;
+
+            let m1 = ball1.mass;
+            let m2 = ball2.mass;
+
+            let newV1x = ((m1 - m2) * v1x + 2 * m2 * v2x) / (m1 + m2);
+            let newV1y = ((m1 - m2) * v1y + 2 * m2 * v2y) / (m1 + m2);
+            let newV2x = ((m2 - m1) * v2x + 2 * m1 * v1x) / (m1 + m2);
+            let newV2y = ((m2 - m1) * v2y + 2 * m1 * v1y) / (m1 + m2);
+
+            ball1.vx = newV1x * dampingFactor;
+            ball1.vy = newV1y * dampingFactor;
+            ball2.vx = newV2x * dampingFactor;
+            ball2.vy = newV2y * dampingFactor;
+        }
+
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            for (let i = 0; i < balls.length; i++) {
+                let ball = balls[i];
+                ball.update();
+                ball.collideWall();
+                ball.draw();
+            }
+
+            collideBalls();
+            requestAnimationFrame(gameLoop);
+        }
+
+        initializeBalls();
+        createGrid();
+        addToGrid();
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <p>This code simulates bouncing balls with gravity, wall collisions (with damping), and ball-to-ball collisions.  It uses a grid-based approach to optimize collision detection, reducing the number of pairwise comparisons.</p>
+        <p>Key features:</p>
+        <ul>
+            <li><b>Ball Class:</b> Represents each ball with properties like position, velocity, radius, color, and mass.</li>
+            <li><b>Initialization:</b> Creates the specified number of balls with random properties.</li>
+            <li><b>Animation Loop:</b> Uses <code>requestAnimationFrame</code> for smooth animation.</li>
+            <li><b>Physics Update:</b> Updates ball positions, applies gravity, and handles wall collisions.</li>
+            <li><b>Wall Collision:</b> Reverses velocity components and applies damping.</li>
+            <li><b>Ball-to-Ball Collision:</b> Detects collisions between nearby balls using a grid system.</li>
+            <li><b>Collision Response:</b>  Implements a simplified elastic collision response to prevent sticking and overlap.</li>
+            <li><b>Grid System:</b> Divides the canvas into a grid to reduce the number of collision checks.</li>
+        </ul>
+        <p>Optimization: The grid system is the main optimization. It significantly reduces the number of collision checks needed, especially with a large number of balls.</p>
+    </section>
+</body>
+</html>
