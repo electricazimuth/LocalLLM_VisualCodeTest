@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        let previousTime = 0;
+
+        const ACCELERATION = 10; // units per second squared
+        const FRICTION = 5; // units per second squared
+        const MAX_SPEED = 10; // units per second
+
+        let keys = {
+            left: false,
+            right: false,
+            up: false,
+            down: false
+        }
+
+        let player = {
+            x: 50,
+            y: H - 50,
+            width: 50,
+            height: 50,
+            speed: 5,
+            jumpSpeed: 10,
+            gravity: 0.5,
+            isJumping: false,
+            vx: 0,
+            vy: 0
+        }
+
+        window.addEventListener('keydown', (event) => {
+            if (event.code === 'ArrowLeft' || event.code === 'KeyA') keys.left = true;
+            else if (event.code === 'ArrowRight' || event.code === 'KeyD') keys.right = true;
+            else if (event.code === 'ArrowUp' || event.code === 'KeyW') keys.up = true;
+            else if (event.code === 'ArrowDown' || event.code === 'KeyS') keys.down = true;
+        });
+
+        window.addEventListener('keyup', (event) => {
+            if (event.code === 'ArrowLeft' || event.code === 'KeyA') keys.left = false;
+            else if (event.code === 'ArrowRight' || event.code === 'KeyD') keys.right = false;
+            else if (event.code === 'ArrowUp' || event.code === 'KeyW') keys.up = false;
+            else if (event.code === 'ArrowDown' || event.code === 'KeyS') keys.down = false;
+        });
+
+        function gameLoop(timestamp) {
+            if (previousTime === 0) previousTime = timestamp;
+            const dt = (timestamp - previousTime) / 1000; // delta time in seconds
+
+            // Horizontal movement
+            if (keys.right) player.vx += ACCELERATION * dt;
+            else if (keys.left) player.vx -= ACCELERATION * dt;
+            else {
+                if (player.vx > 0) player.vx -= FRICTION * dt;
+                else if (player.vx < 0) player.vx += FRICTION * dt;
+                if (Math.abs(player.vx) < FRICTION * dt) player.vx = 0;
+            }
+            player.vx = Math.max(-MAX_SPEED, Math.min(player.vx, MAX_SPEED));
+            player.x += player.vx * dt;
+            player.x = Math.max(0, Math.min(player.x, W - player.width));
+
+            // Vertical movement
+            if (player.y + player.height >= H) { // On the ground
+                if (keys.up) player.vy = -player.jumpSpeed;
+                else player.vy = 0;
+            } else { // In the air
+                player.vy += player.gravity * dt;
+                player.y += player.vy * dt;
+                if (player.y + player.height >= H) {
+                    player.y = H - player.height;
+                    player.vy = 0;
+                }
+            }
+
+            // Drawing
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            if (player.vx > 0) { // Right indicator
+                ctx.fillStyle = 'red';
+                ctx.fillRect(player.x + player.width, player.y + player.height/2 - 5, 10, 10);
+            } else if (player.vx < 0) { // Left indicator
+                ctx.fillStyle = 'red';
+                ctx.fillRect(player.x - 10, player.y + player.height/2 - 5, 10, 10);
+            }
+
+            previousTime = timestamp;
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <p>Use arrow keys or WASD to move and jump. The player accelerates when moving and decelerates when keys are released. Jumping is handled by the up arrow or W key when on the ground. The small red squares indicate the direction of movement.</p>
+    </section>
+</body>
+</html>

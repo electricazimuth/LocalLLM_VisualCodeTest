@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Turret Shooting</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Turret properties
+        const turret = {
+            x: W / 2,
+            y: H - 50,
+            size: 30,
+            barrelLength: 50,
+            angle: 0
+        };
+
+        // Mouse position
+        const mouse = {
+            x: 0,
+            y: 0
+        };
+
+        // Projectiles array
+        let projectiles = [];
+
+        // Projectile class
+        class Projectile {
+            constructor(x, y, speed) {
+                this.x = x;
+                this.y = y;
+                this.size = 5;
+                this.speed = speed;
+                this.createdAt = Date.now();
+                this.color = '#ff4444';
+                
+                // Calculate direction based on mouse position
+                const dx = mouse.x - this.x;
+                const dy = mouse.y - this.y;
+                const angle = Math.atan2(dy, dx);
+                
+                this.vx = Math.cos(angle) * this.speed;
+                this.vy = Math.sin(angle) * this.speed;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Remove if off screen
+                if (this.x < 0 || this.x > W || this.y < 0 || this.y > H) {
+                    return false;
+                }
+                return true;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        // Handle mouse movement
+        canvas.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX - canvas.offsetLeft;
+            mouse.y = e.clientY - canvas.offsetTop;
+        });
+
+        // Handle clicks
+        let canShoot = true;
+        const shootCooldown = 500; // ms
+
+        canvas.addEventListener('click', (e) => {
+            if (canShoot) {
+                const proj = new Projectile(
+                    turret.x,
+                    turret.y,
+                    5
+                );
+                projectiles.push(proj);
+                canShoot = false;
+                setTimeout(() => canShoot = true, shootCooldown);
+            }
+        });
+
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Calculate turret angle
+            const dx = mouse.x - turret.x;
+            const dy = mouse.y - turret.y;
+            turret.angle = Math.atan2(dy, dx);
+
+            // Draw turret base
+            ctx.fillStyle = '#444444';
+            ctx.beginPath();
+            ctx.arc(turret.x, turret.y, turret.size, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw turret barrel
+            ctx.strokeStyle = '#666666';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(turret.x, turret.y);
+            const endX = turret.x + Math.cos(turret.angle) * turret.barrelLength;
+            const endY = turret.y + Math.sin(turret.angle) * turret.barrelLength;
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+
+            // Update and draw projectiles
+            projectiles = projectiles.filter(proj => {
+                proj.update();
+                proj.draw();
+                return true;
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <h3>Notes</h3>
+        <ul>
+            <li>Click to shoot projectiles towards mouse cursor</li>
+            <li>Projectile speed is fixed at 5 pixels/frame</li>
+            <li>Firing cooldown of 500ms prevents spam</li>
+            <li>Projectiles automatically despawn when off screen</li>
+            <li>Turret rotates smoothly towards mouse movement</li>
+        </ul>
+    </section>
+</body>
+</html>

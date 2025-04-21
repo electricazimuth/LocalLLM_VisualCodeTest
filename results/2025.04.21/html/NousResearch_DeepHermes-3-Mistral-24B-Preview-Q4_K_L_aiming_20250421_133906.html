@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Turret Shooting</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const turretPos = { x: W / 2, y: H - 25 };
+        const mousePos = { x: 0, y: 0 };
+        let cooldown = 0;
+        const projectiles = [];
+
+        class Turret {
+            constructor(pos) {
+                this.pos = pos;
+                this.rotation = 0;
+            }
+            update(mouseX, mouseY) {
+                const dx = mouseX - this.pos.x;
+                const dy = mouseY - this.pos.y;
+                this.rotation = Math.atan2(dy, dx);
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                ctx.rotate(this.rotation);
+                ctx.fillStyle = 'gray';
+                ctx.fillRect(-25, -25, 50, 50);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, -100);
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+        const turret = new Turret(turretPos);
+
+        class Projectile {
+            constructor(pos, vel, size, color, lifespan) {
+                this.pos = { x: pos.x, y: pos.y };
+                this.vel = vel;
+                this.size = size;
+                this.color = color;
+                this.lifespan = lifespan;
+                this.createTime = performance.now();
+            }
+            update() {
+                this.pos.x += this.vel.x;
+                this.pos.y += this.vel.y;
+            }
+            isExpired() {
+                return performance.now() - this.createTime > this.lifespan;
+            }
+            isOffScreen() {
+                return this.pos.x < 0 || this.pos.x > W || this.pos.y < 0 || this.pos.y > H;
+            }
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.size, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        class Target {
+            constructor(pos, radius) {
+                this.pos = pos;
+                this.radius = radius;
+            }
+            isCollision(pos) {
+                const dx = pos.x - this.pos.x;
+                const dy = pos.y - this.pos.y;
+                return dx*dx + dy*dy <= this.radius*this.radius;
+            }
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, 2 * Math.PI);
+                ctx.fillStyle = 'blue';
+                ctx.fill();
+            }
+        }
+        const target = new Target({ x: W/2, y: 100 }, 50);
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mousePos.x = e.clientX - rect.left;
+            mousePos.y = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('click', (e) => {
+            if (performance.now() >= cooldown) {
+                const dx = mousePos.x - turretPos.x;
+                const dy = mousePos.y - turretPos.y;
+                const distance = Math.sqrt(dx*dx + dy*dy);
+                const direction = { x: dx / distance, y: dy / distance };
+                const speed = 5; // pixels per frame
+                const vel = { x: direction.x * speed, y: direction.y * speed };
+                const projectile = new Projectile(turretPos, vel, 5, 'red', 2000);
+                projectiles.push(projectile);
+                cooldown = performance.now() + 1000; // 1 second cooldown
+            }
+        });
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+            turret.update(mousePos.x, mousePos.y);
+            turret.draw(ctx);
+            target.draw(ctx);
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                p.update();
+                if (p.isExpired() || p.isOffScreen()) {
+                    projectiles.splice(i, 1);
+                } else {
+                    p.draw(ctx);
+                }
+            }
+            // Collision detection
+            for (let i = 0; i < projectiles.length; i++) {
+                const p = projectiles[i];
+                if (target.isCollision(p.pos)) {
+                    projectiles.splice(i, 1);
+                    i--; // Adjust index
+                }
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This code implements a turret shooting game with collision detection against a target.
+        The turret fires projectiles towards the mouse click, with a cooldown and projectile lifespan.
+        The target is a blue circle at the top center; projectiles that hit it are removed.
+    </section>
+</body>
+</html>

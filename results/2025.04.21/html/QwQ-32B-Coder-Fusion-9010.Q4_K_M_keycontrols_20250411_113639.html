@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+            ArrowUp: false,
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            space: false
+        };
+
+        function handleKeys(event, action) {
+            const key = event.key.toLowerCase();
+            if (keys[key]) {
+                keys[key] = action === 'press';
+            } else if (keys[event.key]) {
+                keys[event.key] = action === 'press';
+            }
+        }
+
+        document.addEventListener('keydown', function(event) {
+            handleKeys(event, 'press');
+        });
+
+        document.addEventListener('keyup', function(event) {
+            handleKeys(event, 'release');
+        });
+
+        class Player {
+            constructor(x, y, width, height) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.speed = 3;
+                this.velocityX = 0;
+                this.isJumping = false;
+                this.jumpVelocity = 5;
+                this.gravity = 0.2;
+                this.velocityY = 0;
+            }
+
+            update(deltaTime) {
+                let acceleration = 0.1;
+                let friction = 0.9;
+
+                if (keys.arrowleft || keys.a) {
+                    this.velocityX -= acceleration;
+                }
+                if (keys.arrowright || keys.d) {
+                    this.velocityX += acceleration;
+                }
+
+                this.velocityX *= friction;
+
+                this.x += this.velocityX * deltaTime;
+
+                if (this.x < 0) {
+                    this.x = 0;
+                    this.velocityX = 0;
+                } else if (this.x + this.width > W) {
+                    this.x = W - this.width;
+                    this.velocityX = 0;
+                }
+
+                if (keys.arrowup || keys.space || keys.w) {
+                    if (!this.isJumping) {
+                        this.isJumping = true;
+                        this.velocityY = -this.jumpVelocity;
+                    }
+                }
+
+                if (this.isJumping) {
+                    this.velocityY += this.gravity;
+                    this.y += this.velocityY;
+
+                    if (this.y + this.height >= H - 20) { // ground level
+                        this.y = H - this.height - 20;
+                        this.isJumping = false;
+                        this.velocityY = 0;
+                    }
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = 'blue';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+        }
+
+        let player = new Player(W / 2, H - 100, 50, 50);
+
+        let lastTime = 0;
+
+        function gameLoop(timestamp) {
+            let deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            ctx.clearRect(0, 0, W, H);
+            player.update(deltaTime);
+            player.draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

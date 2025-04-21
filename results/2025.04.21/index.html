@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Benchmark Viewer</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh; /* Full viewport height */
+        }
+        .controls {
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #ccc;
+            flex-shrink: 0; /* Prevent controls from shrinking */
+        }
+        label {
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        #llm-select {
+            padding: 5px;
+            min-width: 300px;
+        }
+        #grid-container {
+            flex-grow: 1; /* Allow grid to fill remaining space */
+            display: grid;
+            grid-template-columns: 1fr 1fr; /* Two equal columns */
+            grid-template-rows: 1fr 1fr; /* Two equal rows */
+            gap: 10px; /* Gap between iframes */
+            padding: 10px;
+            box-sizing: border-box; /* Include padding in element's total width and height */
+            overflow: hidden; /* Prevent potential overflow issues */
+        }
+        .grid-item {
+           border: 1px solid #ccc;
+           position: relative; /* For positioning the label */
+           display: flex; /* Use flex to manage content */
+           flex-direction: column;
+           background-color: #f9f9f9; /* Light background for the item itself */
+        }
+        .grid-item .benchmark-label {
+            background-color: #e0e0e0;
+            padding: 3px 5px;
+            font-size: 0.9em;
+            font-weight: bold;
+            text-align: center;
+            flex-shrink: 0; /* Prevent label from shrinking */
+        }
+        .grid-item iframe {
+            border: none; /* Remove default iframe border */
+            width: 100%;
+            height: 100%; /* Fill the grid item */
+            flex-grow: 1; /* Allow iframe to fill remaining space */
+            background-color: #fff; /* White background for the iframe area */
+        }
+        /* Style for empty state */
+         .grid-item iframe[src=""]::before,
+         .grid-item iframe[src="about:blank"]::before, /* Handle browsers defaulting to about:blank */
+         .grid-item iframe:not([src])::before {
+            content: "Select an LLM to view benchmark";
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: #888;
+            font-style: italic;
+            background-color: #f9f9f9; /* Match item background */
+            position: absolute; /* Position it within the iframe's space */
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none; /* Allow clicks to potentially pass through if needed */
+         }
+         .error-message {
+             color: red;
+             background-color: #ffe0e0;
+             border: 1px solid red;
+             padding: 10px;
+             margin: 10px;
+         }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        
+        <label for="llm-select">Select LLM:</label>
+        <select id="llm-select" >
+            <option value="">-- Select an LLM --</option>
+                            <option value="Bifrost-27B-hf-Q4_K_M">
+                    Bifrost-27B-hf-Q4_K_M                </option>
+                            <option value="Codestral-22B-v0.1-Q6_K">
+                    Codestral-22B-v0.1-Q6_K                </option>
+                            <option value="DeepSeek-Coder-V2-Lite-Instruct-Q4_K_L">
+                    DeepSeek-Coder-V2-Lite-Instruct-Q4_K_L                </option>
+                            <option value="DeepSeek-R1-Distill-Qwen-32B-Q4_K_M">
+                    DeepSeek-R1-Distill-Qwen-32B-Q4_K_M                </option>
+                            <option value="FuseO1-DeekSeekR1-QwQ-SkyT1-32B-Preview-Q4_K_M">
+                    FuseO1-DeekSeekR1-QwQ-SkyT1-32B-Preview-Q4_K_M                </option>
+                            <option value="Mistral-Large-Instruct-2411-IQ2_XS">
+                    Mistral-Large-Instruct-2411-IQ2_XS                </option>
+                            <option value="Mistral-Nemo-Instruct-2407-Q8_0">
+                    Mistral-Nemo-Instruct-2407-Q8_0                </option>
+                            <option value="Mistral-Small-24B-Instruct-2501-Q4_K_L">
+                    Mistral-Small-24B-Instruct-2501-Q4_K_L                </option>
+                            <option value="Mistral-Small-24B-Instruct-2501-reasoning.i1-Q4_K_M">
+                    Mistral-Small-24B-Instruct-2501-reasoning.i1-Q4_K_M                </option>
+                            <option value="Mistral-Small-Instruct-2409-Q4_K_L">
+                    Mistral-Small-Instruct-2409-Q4_K_L                </option>
+                            <option value="NousResearch_DeepHermes-3-Mistral-24B-Preview-Q4_K_L">
+                    NousResearch_DeepHermes-3-Mistral-24B-Preview-Q4_K_L                </option>
+                            <option value="Phi-3.5-mini-instruct-Q8_0">
+                    Phi-3.5-mini-instruct-Q8_0                </option>
+                            <option value="QwQ-32B-Coder-Fusion-9010.Q4_K_M">
+                    QwQ-32B-Coder-Fusion-9010.Q4_K_M                </option>
+                            <option value="Qwen2.5-Coder-14B-Instruct-Q4_K_L">
+                    Qwen2.5-Coder-14B-Instruct-Q4_K_L                </option>
+                            <option value="Qwen2.5-Coder-32B-Instruct-Q4_K_L">
+                    Qwen2.5-Coder-32B-Instruct-Q4_K_L                </option>
+                            <option value="Qwen2.5-Coder-7B-Instruct-Q4_K_L">
+                    Qwen2.5-Coder-7B-Instruct-Q4_K_L                </option>
+                            <option value="RekaAI_reka-flash-3-Q4_K_L">
+                    RekaAI_reka-flash-3-Q4_K_L                </option>
+                            <option value="Tesslate_Synthia-S1-27b-Q4_K_L">
+                    Tesslate_Synthia-S1-27b-Q4_K_L                </option>
+                            <option value="UIGEN-T1.5-32B.Q4_K_M">
+                    UIGEN-T1.5-32B.Q4_K_M                </option>
+                            <option value="Yi-Coder-9B-Chat-Q4_K_L">
+                    Yi-Coder-9B-Chat-Q4_K_L                </option>
+                            <option value="aya-expanse-32b-Q4_K_L">
+                    aya-expanse-32b-Q4_K_L                </option>
+                            <option value="gemma-2-27b-it-Q4_K_L">
+                    gemma-2-27b-it-Q4_K_L                </option>
+                            <option value="gemma-3-27b-it-q4_0">
+                    gemma-3-27b-it-q4_0                </option>
+                            <option value="google_gemma-3-12b-it-Q8_0">
+                    google_gemma-3-12b-it-Q8_0                </option>
+                            <option value="google_gemma-3-1b-it-Q8_0">
+                    google_gemma-3-1b-it-Q8_0                </option>
+                            <option value="google_gemma-3-27b-it-Q4_K_L">
+                    google_gemma-3-27b-it-Q4_K_L                </option>
+                            <option value="google_gemma-3-27b-it-Q8_0">
+                    google_gemma-3-27b-it-Q8_0                </option>
+                            <option value="google_gemma-3-4b-it-Q8_0">
+                    google_gemma-3-4b-it-Q8_0                </option>
+                            <option value="mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K_L">
+                    mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K_L                </option>
+                            <option value="nvidia_Llama-3_3-Nemotron-Super-49B-v1-Q4_K_L">
+                    nvidia_Llama-3_3-Nemotron-Super-49B-v1-Q4_K_L                </option>
+                            <option value="phi-4-Q8_0">
+                    phi-4-Q8_0                </option>
+                                </select>
+    </div>
+
+    <div id="grid-container">
+        <div class="grid-item">
+            <div class="benchmark-label">Aiming</div>
+            <iframe id="iframe-aiming" src="" title="Aiming Benchmark"></iframe>
+        </div>
+        <div class="grid-item">
+            <div class="benchmark-label">Ball bound</div>
+            <iframe id="iframe-ball_bound" src="" title="Ball bound Benchmark"></iframe>
+        </div>
+        <div class="grid-item">
+             <div class="benchmark-label">Keycontrols</div>
+            <iframe id="iframe-keycontrols" src="" title="Keycontrols Benchmark"></iframe>
+        </div>
+        <div class="grid-item">
+             <div class="benchmark-label">Particles</div>
+            <iframe id="iframe-particles" src="" title="Particles Benchmark"></iframe>
+        </div>
+    </div>
+
+    <script>
+        // Embed the PHP data structure into JavaScript
+        const llmFilesData = {
+    "Bifrost-27B-hf-Q4_K_M": {
+        "aiming": "html/Bifrost-27B-hf-Q4_K_M_aiming_20250411_095326.html",
+        "ball_bound": "html/Bifrost-27B-hf-Q4_K_M_ball_bound_20250411_095439.html",
+        "keycontrols": "html/Bifrost-27B-hf-Q4_K_M_keycontrols_20250411_095604.html",
+        "particles": "html/Bifrost-27B-hf-Q4_K_M_particles_20250411_095718.html"
+    },
+    "Codestral-22B-v0.1-Q6_K": {
+        "aiming": "html/Codestral-22B-v0.1-Q6_K_aiming_20250411_095931.html",
+        "keycontrols": "html/Codestral-22B-v0.1-Q6_K_keycontrols_20250411_100333.html",
+        "particles": "html/Codestral-22B-v0.1-Q6_K_particles_20250411_100459.html"
+    },
+    "DeepSeek-Coder-V2-Lite-Instruct-Q4_K_L": {
+        "aiming": "html/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_L_aiming_20250410_183506.html",
+        "ball_bound": "html/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_L_ball_bound_20250410_183540.html",
+        "keycontrols": "html/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_L_keycontrols_20250410_183558.html",
+        "particles": "html/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_L_particles_20250410_183616.html"
+    },
+    "DeepSeek-R1-Distill-Qwen-32B-Q4_K_M": {
+        "aiming": "html/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M_aiming_20250411_100835.html",
+        "ball_bound": "html/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M_ball_bound_20250411_101242.html",
+        "keycontrols": "html/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M_keycontrols_20250411_101551.html",
+        "particles": "html/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M_particles_20250411_101903.html"
+    },
+    "FuseO1-DeekSeekR1-QwQ-SkyT1-32B-Preview-Q4_K_M": {
+        "aiming": "html/FuseO1-DeekSeekR1-QwQ-SkyT1-32B-Preview-Q4_K_M_aiming_20250411_102211.html",
+        "ball_bound": "html/FuseO1-DeekSeekR1-QwQ-SkyT1-32B-Preview-Q4_K_M_ball_bound_20250411_102531.html",
+        "keycontrols": "html/FuseO1-DeekSeekR1-QwQ-SkyT1-32B-Preview-Q4_K_M_keycontrols_20250411_102747.html",
+        "particles": "html/FuseO1-DeekSeekR1-QwQ-SkyT1-32B-Preview-Q4_K_M_particles_20250411_103008.html"
+    },
+    "Mistral-Large-Instruct-2411-IQ2_XS": {
+        "aiming": "html/Mistral-Large-Instruct-2411-IQ2_XS_aiming_20250415_124331.html",
+        "ball_bound": "html/Mistral-Large-Instruct-2411-IQ2_XS_ball_bound_20250415_125430.html",
+        "keycontrols": "html/Mistral-Large-Instruct-2411-IQ2_XS_keycontrols_20250415_130245.html",
+        "particles": "html/Mistral-Large-Instruct-2411-IQ2_XS_particles_20250415_130922.html"
+    },
+    "Mistral-Nemo-Instruct-2407-Q8_0": {
+        "aiming": "html/Mistral-Nemo-Instruct-2407-Q8_0_aiming_20250410_183742.html",
+        "ball_bound": "html/Mistral-Nemo-Instruct-2407-Q8_0_ball_bound_20250410_183829.html",
+        "keycontrols": "html/Mistral-Nemo-Instruct-2407-Q8_0_keycontrols_20250410_183915.html",
+        "particles": "html/Mistral-Nemo-Instruct-2407-Q8_0_particles_20250410_183957.html"
+    },
+    "Mistral-Small-24B-Instruct-2501-Q4_K_L": {
+        "aiming": "html/Mistral-Small-24B-Instruct-2501-Q4_K_L_aiming_20250410_184150.html",
+        "ball_bound": "html/Mistral-Small-24B-Instruct-2501-Q4_K_L_ball_bound_20250410_184433.html",
+        "keycontrols": "html/Mistral-Small-24B-Instruct-2501-Q4_K_L_keycontrols_20250410_184549.html",
+        "particles": "html/Mistral-Small-24B-Instruct-2501-Q4_K_L_particles_20250410_184658.html"
+    },
+    "Mistral-Small-24B-Instruct-2501-reasoning.i1-Q4_K_M": {
+        "aiming": "html/Mistral-Small-24B-Instruct-2501-reasoning.i1-Q4_K_M_aiming_20250421_100642.html",
+        "ball_bound": "html/Mistral-Small-24B-Instruct-2501-reasoning.i1-Q4_K_M_ball_bound_20250421_101455.html",
+        "keycontrols": "html/Mistral-Small-24B-Instruct-2501-reasoning.i1-Q4_K_M_keycontrols_20250421_102251.html"
+    },
+    "Mistral-Small-Instruct-2409-Q4_K_L": {
+        "aiming": "html/Mistral-Small-Instruct-2409-Q4_K_L_aiming_20250410_184905.html",
+        "ball_bound": "html/Mistral-Small-Instruct-2409-Q4_K_L_ball_bound_20250410_185126.html",
+        "keycontrols": "html/Mistral-Small-Instruct-2409-Q4_K_L_keycontrols_20250410_185300.html",
+        "particles": "html/Mistral-Small-Instruct-2409-Q4_K_L_particles_20250410_185440.html"
+    },
+    "NousResearch_DeepHermes-3-Mistral-24B-Preview-Q4_K_L": {
+        "aiming": "html/NousResearch_DeepHermes-3-Mistral-24B-Preview-Q4_K_L_aiming_20250421_133906.html",
+        "ball_bound": "html/NousResearch_DeepHermes-3-Mistral-24B-Preview-Q4_K_L_ball_bound_20250421_135622.html",
+        "keycontrols": "html/NousResearch_DeepHermes-3-Mistral-24B-Preview-Q4_K_L_keycontrols_20250421_140442.html",
+        "particles": "html/NousResearch_DeepHermes-3-Mistral-24B-Preview-Q4_K_L_particles_20250421_141313.html"
+    },
+    "Phi-3.5-mini-instruct-Q8_0": {
+        "aiming": "html/Phi-3.5-mini-instruct-Q8_0_aiming_20250410_185530.html",
+        "ball_bound": "html/Phi-3.5-mini-instruct-Q8_0_ball_bound_20250410_185618.html",
+        "keycontrols": "html/Phi-3.5-mini-instruct-Q8_0_keycontrols_20250410_185650.html",
+        "particles": "html/Phi-3.5-mini-instruct-Q8_0_particles_20250410_185716.html"
+    },
+    "QwQ-32B-Coder-Fusion-9010.Q4_K_M": {
+        "aiming": "html/QwQ-32B-Coder-Fusion-9010.Q4_K_M_aiming_20250411_111745.html",
+        "ball_bound": "html/QwQ-32B-Coder-Fusion-9010.Q4_K_M_ball_bound_20250411_112739.html",
+        "keycontrols": "html/QwQ-32B-Coder-Fusion-9010.Q4_K_M_keycontrols_20250411_113639.html"
+    },
+    "Qwen2.5-Coder-14B-Instruct-Q4_K_L": {
+        "aiming": "html/Qwen2.5-Coder-14B-Instruct-Q4_K_L_aiming_20250415_131044.html",
+        "ball_bound": "html/Qwen2.5-Coder-14B-Instruct-Q4_K_L_ball_bound_20250415_131202.html",
+        "keycontrols": "html/Qwen2.5-Coder-14B-Instruct-Q4_K_L_keycontrols_20250415_131255.html",
+        "particles": "html/Qwen2.5-Coder-14B-Instruct-Q4_K_L_particles_20250415_131347.html"
+    },
+    "Qwen2.5-Coder-32B-Instruct-Q4_K_L": {
+        "aiming": "html/Qwen2.5-Coder-32B-Instruct-Q4_K_L_aiming_20250415_131622.html",
+        "ball_bound": "html/Qwen2.5-Coder-32B-Instruct-Q4_K_L_ball_bound_20250415_131839.html",
+        "keycontrols": "html/Qwen2.5-Coder-32B-Instruct-Q4_K_L_keycontrols_20250415_132042.html",
+        "particles": "html/Qwen2.5-Coder-32B-Instruct-Q4_K_L_particles_20250415_132225.html"
+    },
+    "Qwen2.5-Coder-7B-Instruct-Q4_K_L": {
+        "aiming": "html/Qwen2.5-Coder-7B-Instruct-Q4_K_L_aiming_20250415_132302.html",
+        "ball_bound": "html/Qwen2.5-Coder-7B-Instruct-Q4_K_L_ball_bound_20250415_132338.html",
+        "keycontrols": "html/Qwen2.5-Coder-7B-Instruct-Q4_K_L_keycontrols_20250415_132405.html",
+        "particles": "html/Qwen2.5-Coder-7B-Instruct-Q4_K_L_particles_20250415_132428.html"
+    },
+    "RekaAI_reka-flash-3-Q4_K_L": {
+        "aiming": "html/RekaAI_reka-flash-3-Q4_K_L_aiming_20250421_120900.html",
+        "ball_bound": "html/RekaAI_reka-flash-3-Q4_K_L_ball_bound_20250421_121215.html",
+        "keycontrols": "html/RekaAI_reka-flash-3-Q4_K_L_keycontrols_20250421_121732.html",
+        "particles": "html/RekaAI_reka-flash-3-Q4_K_L_particles_20250421_122549.html"
+    },
+    "Tesslate_Synthia-S1-27b-Q4_K_L": {
+        "aiming": "html/Tesslate_Synthia-S1-27b-Q4_K_L_aiming_20250411_114933.html",
+        "ball_bound": "html/Tesslate_Synthia-S1-27b-Q4_K_L_ball_bound_20250411_115243.html",
+        "keycontrols": "html/Tesslate_Synthia-S1-27b-Q4_K_L_keycontrols_20250411_115519.html",
+        "particles": "html/Tesslate_Synthia-S1-27b-Q4_K_L_particles_20250411_115811.html"
+    },
+    "UIGEN-T1.5-32B.Q4_K_M": {
+        "aiming": "html/UIGEN-T1.5-32B.Q4_K_M_aiming_20250411_120032.html",
+        "ball_bound": "html/UIGEN-T1.5-32B.Q4_K_M_ball_bound_20250411_120420.html",
+        "keycontrols": "html/UIGEN-T1.5-32B.Q4_K_M_keycontrols_20250411_120604.html",
+        "particles": "html/UIGEN-T1.5-32B.Q4_K_M_particles_20250411_120715.html"
+    },
+    "Yi-Coder-9B-Chat-Q4_K_L": {
+        "aiming": "html/Yi-Coder-9B-Chat-Q4_K_L_aiming_20250410_190219.html",
+        "ball_bound": "html/Yi-Coder-9B-Chat-Q4_K_L_ball_bound_20250410_190732.html",
+        "particles": "html/Yi-Coder-9B-Chat-Q4_K_L_particles_20250410_191715.html"
+    },
+    "aya-expanse-32b-Q4_K_L": {
+        "aiming": "html/aya-expanse-32b-Q4_K_L_aiming_20250411_121007.html",
+        "ball_bound": "html/aya-expanse-32b-Q4_K_L_ball_bound_20250411_121157.html",
+        "keycontrols": "html/aya-expanse-32b-Q4_K_L_keycontrols_20250411_121400.html",
+        "particles": "html/aya-expanse-32b-Q4_K_L_particles_20250411_121600.html"
+    },
+    "gemma-2-27b-it-Q4_K_L": {
+        "aiming": "html/gemma-2-27b-it-Q4_K_L_aiming_20250411_121825.html",
+        "ball_bound": "html/gemma-2-27b-it-Q4_K_L_ball_bound_20250411_122033.html",
+        "keycontrols": "html/gemma-2-27b-it-Q4_K_L_keycontrols_20250411_122215.html",
+        "particles": "html/gemma-2-27b-it-Q4_K_L_particles_20250411_122355.html"
+    },
+    "gemma-3-27b-it-q4_0": {
+        "aiming": "html/gemma-3-27b-it-q4_0_aiming_20250411_122628.html",
+        "ball_bound": "html/gemma-3-27b-it-q4_0_ball_bound_20250411_122936.html",
+        "keycontrols": "html/gemma-3-27b-it-q4_0_keycontrols_20250411_123103.html",
+        "particles": "html/gemma-3-27b-it-q4_0_particles_20250411_123228.html"
+    },
+    "google_gemma-3-12b-it-Q8_0": {
+        "aiming": "html/google_gemma-3-12b-it-Q8_0_aiming_20250410_191858.html",
+        "ball_bound": "html/google_gemma-3-12b-it-Q8_0_ball_bound_20250410_192023.html",
+        "keycontrols": "html/google_gemma-3-12b-it-Q8_0_keycontrols_20250410_192140.html",
+        "particles": "html/google_gemma-3-12b-it-Q8_0_particles_20250410_192239.html"
+    },
+    "google_gemma-3-1b-it-Q8_0": {
+        "aiming": "html/google_gemma-3-1b-it-Q8_0_aiming_20250410_192303.html",
+        "ball_bound": "html/google_gemma-3-1b-it-Q8_0_ball_bound_20250410_192322.html",
+        "keycontrols": "html/google_gemma-3-1b-it-Q8_0_keycontrols_20250410_192334.html",
+        "particles": "html/google_gemma-3-1b-it-Q8_0_particles_20250410_192341.html"
+    },
+    "google_gemma-3-27b-it-Q4_K_L": {
+        "aiming": "html/google_gemma-3-27b-it-Q4_K_L_aiming_20250411_123456.html",
+        "ball_bound": "html/google_gemma-3-27b-it-Q4_K_L_ball_bound_20250411_123725.html",
+        "keycontrols": "html/google_gemma-3-27b-it-Q4_K_L_keycontrols_20250411_123854.html",
+        "particles": "html/google_gemma-3-27b-it-Q4_K_L_particles_20250411_124042.html"
+    },
+    "google_gemma-3-27b-it-Q8_0": {
+        "aiming": "html/google_gemma-3-27b-it-Q8_0_aiming_20250411_124359.html",
+        "ball_bound": "html/google_gemma-3-27b-it-Q8_0_ball_bound_20250411_124635.html",
+        "keycontrols": "html/google_gemma-3-27b-it-Q8_0_keycontrols_20250411_124827.html",
+        "particles": "html/google_gemma-3-27b-it-Q8_0_particles_20250411_125045.html"
+    },
+    "google_gemma-3-4b-it-Q8_0": {
+        "aiming": "html/google_gemma-3-4b-it-Q8_0_aiming_20250410_192428.html",
+        "ball_bound": "html/google_gemma-3-4b-it-Q8_0_ball_bound_20250410_192458.html",
+        "keycontrols": "html/google_gemma-3-4b-it-Q8_0_keycontrols_20250410_192521.html",
+        "particles": "html/google_gemma-3-4b-it-Q8_0_particles_20250410_192548.html"
+    },
+    "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K_L": {
+        "aiming": "html/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K_L_aiming_20250411_125324.html",
+        "ball_bound": "html/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K_L_ball_bound_20250411_125620.html",
+        "keycontrols": "html/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K_L_keycontrols_20250411_125815.html",
+        "particles": "html/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K_L_particles_20250411_125952.html"
+    },
+    "nvidia_Llama-3_3-Nemotron-Super-49B-v1-Q4_K_L": {
+        "aiming": "html/nvidia_Llama-3_3-Nemotron-Super-49B-v1-Q4_K_L_aiming_20250411_130459.html",
+        "ball_bound": "html/nvidia_Llama-3_3-Nemotron-Super-49B-v1-Q4_K_L_ball_bound_20250411_131033.html",
+        "keycontrols": "html/nvidia_Llama-3_3-Nemotron-Super-49B-v1-Q4_K_L_keycontrols_20250411_131504.html",
+        "particles": "html/nvidia_Llama-3_3-Nemotron-Super-49B-v1-Q4_K_L_particles_20250411_131909.html"
+    },
+    "phi-4-Q8_0": {
+        "aiming": "html/phi-4-Q8_0_aiming_20250415_151717.html",
+        "ball_bound": "html/phi-4-Q8_0_ball_bound_20250415_151850.html",
+        "keycontrols": "html/phi-4-Q8_0_keycontrols_20250415_151959.html",
+        "particles": "html/phi-4-Q8_0_particles_20250415_152053.html"
+    }
+};
+        const benchmarkKeys = ["aiming","ball_bound","keycontrols","particles"]; // ['aiming', 'ball_bound', ...]
+
+        const llmSelect = document.getElementById('llm-select');
+        const iframes = {};
+        benchmarkKeys.forEach(key => {
+            const iframeElement = document.getElementById(`iframe-${key}`);
+            if (iframeElement) { // Check if element exists before assigning
+                 iframes[key] = iframeElement;
+            } else {
+                console.error(`Iframe element with ID 'iframe-${key}' not found.`);
+            }
+        });
+
+        llmSelect.addEventListener('change', function() {
+            const selectedLLM = this.value;
+
+            if (selectedLLM && llmFilesData[selectedLLM]) {
+                const files = llmFilesData[selectedLLM];
+                benchmarkKeys.forEach(key => {
+                    if (iframes[key]) {
+                        // Set src if file exists for this benchmark, otherwise set to empty string or 'about:blank'
+                        const filePath = files[key] || 'about:blank'; // Use about:blank for clarity in dev tools
+                        if (iframes[key].src !== filePath) { // Avoid unnecessary reloads if src is the same
+                           iframes[key].src = filePath;
+                        }
+                    }
+                });
+            } else {
+                // Clear all iframes if "-- Select --" or an invalid LLM is chosen
+                 benchmarkKeys.forEach(key => {
+                    if (iframes[key]) {
+                        if (iframes[key].src !== 'about:blank') {
+                             iframes[key].src = 'about:blank';
+                        }
+                    }
+                });
+            }
+        });
+
+        // Initialize view - Clear iframes on load
+        document.addEventListener('DOMContentLoaded', () => {
+             benchmarkKeys.forEach(key => {
+                if (iframes[key]) {
+                    iframes[key].src = 'about:blank';
+                }
+            });
+             // Optional: Automatically select the first LLM if available
+             // if (llmSelect.options.length > 1) {
+             //    llmSelect.selectedIndex = 1; // Select the first actual LLM
+             //    llmSelect.dispatchEvent(new Event('change'));
+             // }
+        });
+
+    </script>
+
+</body>
+</html>

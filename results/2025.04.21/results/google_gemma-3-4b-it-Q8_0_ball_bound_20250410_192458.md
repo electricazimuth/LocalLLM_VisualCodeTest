@@ -1,0 +1,132 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Constants ---
+        const gravity = 0.5;
+        const damping = 0.9;
+        const numBalls = 50;
+        const ballRadius = 10;
+        const wallThickness = 20;
+
+        // --- Ball Class ---
+        class Ball {
+            constructor() {
+                this.x = Math.random() * (W - 2 * ballRadius) + ballRadius;
+                this.y = Math.random() * (H - 2 * ballRadius) + ballRadius;
+                this.vx = (Math.random() - 0.5) * 3; // Initial random horizontal velocity
+                this.vy = Math.random() * 5; // Initial random vertical velocity
+                this.radius = ballRadius;
+                this.mass = ballRadius * ballRadius; // Proportional to radius squared
+                this.color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            }
+
+            update() {
+                this.vx += gravity;
+                this.vy += gravity;
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collisions
+                if (this.x + this.radius > W || this.x - this.radius < 0) {
+                    this.vx = -this.vx * damping;
+                    this.x = Math.max(this.radius, Math.min(this.x, W - this.radius));
+                }
+                if (this.y + this.radius > H || this.y - this.radius < 0) {
+                    this.vy = -this.vy * damping;
+                    this.y = Math.max(this.radius, Math.min(this.y, H - this.radius));
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        // --- Ball Array ---
+        const balls = [];
+        for (let i = 0; i < numBalls; i++) {
+            balls.push(new Ball());
+        }
+
+        // --- Collision Detection (Simple - could be optimized with a grid) ---
+        function checkCollisions() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    const dx = balls[i].x - balls[j].x;
+                    const dy = balls[i].y - balls[j].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance <= balls[i].radius + balls[j].radius) {
+                        // Collision detected - implement collision response here
+                        // This is a simplified response - more sophisticated responses exist
+                        const overlap = distance - (balls[i].radius + balls[j].radius);
+                        const nx = dx / distance;
+                        const ny = dy / distance;
+
+                        balls[i].x -= nx * overlap * 0.5;
+                        balls[i].y -= ny * overlap * 0.5;
+                        balls[j].x += nx * overlap * 0.5;
+                        balls[j].y += ny * overlap * 0.5;
+                    }
+                }
+            }
+        }
+
+
+
+        // --- Animation Loop ---
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            for (const ball of balls) {
+                ball.update();
+                ball.draw();
+            }
+
+            checkCollisions();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+        Notes:
+        <ul>
+            <li>This is a basic implementation of the bouncing balls simulation.</li>
+            <li>Collision detection is currently simple and could be improved with techniques like a grid or quadtree for better performance with a large number of balls.</li>
+            <li>Collision response is simplified; a more sophisticated approach would consider impulse and mass for a more realistic interaction.</li>
+            <li>The damping factor controls the energy loss during collisions.  Adjusting this value will affect the simulation's behavior.</li>
+            <li>The initial velocities of the balls are random.</li>
+            <li>Consider adding more features such as different colors, sizes, and gravity values.</li>
+            <li>Optimization:  Spatial partitioning (grids or quadtrees) would dramatically improve performance for a large number of balls.</li>
+        </ul>
+    </section>
+</body>
+</html>
+```
+ <!-- 30.70s -->

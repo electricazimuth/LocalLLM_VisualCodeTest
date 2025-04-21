@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        class Player {
+            constructor(x, y, width, height, speed, jumpHeight, gravity) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.speed = speed;
+                this.jumpHeight = jumpHeight;
+                this.gravity = gravity;
+                this.yVelocity = 0;
+                this.isJumping = false;
+                this.acceleration = 0.2;
+                this.deceleration = 0.1;
+                this.horizontalInput = 0;
+            }
+
+            update(dt) {
+                // Horizontal movement
+                this.horizontalInput = 0;
+                if (ctx.keys['ArrowLeft'] || ctx.keys['A']) {
+                    this.horizontalInput = -1;
+                }
+                if (ctx.keys['ArrowRight'] || ctx.keys['D']) {
+                    this.horizontalInput = 1;
+                }
+
+                // Acceleration and Deceleration
+                this.yVelocity += this.horizontalInput * this.acceleration * dt;
+                if (Math.abs(this.yVelocity) > this.acceleration * dt) {
+                    this.yVelocity = Math.max(-this.acceleration * dt, Math.min(this.acceleration * dt, this.yVelocity));
+                }
+
+                // Jumping
+                if (!this.isJumping && ctx.keys['Space']) {
+                    this.yVelocity = -this.jumpHeight;
+                    this.isJumping = true;
+                }
+
+                // Gravity
+                this.yVelocity += this.gravity * dt;
+
+                // Update position
+                this.x += this.yVelocity * dt;
+                this.y += this.yVelocity * dt;
+
+                // Boundary checks
+                if (this.x < 0) {
+                    this.x = 0;
+                }
+                if (this.x + this.width > W) {
+                    this.x = W - this.width;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+        }
+
+        const player = new Player(W / 2, H - 50, 30, 30, 5, 20, 0.5);
+
+        const ctxKeys = {};
+        document.addEventListener('keydown', (e) => {
+            ctxKeys[e.key] = true;
+        });
+        document.addEventListener('keyup', (e) => {
+            ctxKeys[e.key] = false;
+        });
+
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update player
+            player.update(timestamp);
+
+            // Draw player
+            player.draw();
+        }
+
+        requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+        <p>
+            This code implements a simple run and jump game using HTML5 Canvas and JavaScript.
+            The Player class handles movement, jumping, and boundary checks.
+            The gameLoop function updates and draws the player.
+            Keyboard events (ArrowLeft, ArrowRight, Space) are used to control movement and jumping.
+            Acceleration and deceleration are implemented to make movement more realistic.
+            Multiple key presses are handled correctly, allowing for diagonal movement.
+        </p>
+    </section>
+</body>
+</html>

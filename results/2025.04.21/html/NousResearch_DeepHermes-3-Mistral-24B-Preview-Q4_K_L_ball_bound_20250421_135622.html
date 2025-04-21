@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Ball class
+        class Ball {
+            constructor(x, y, vx, vy, r, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = r;
+                this.color = color;
+                this.mass = r * r; // Mass proportional to radius squared
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        // Ball initialization
+        function createBalls(numBalls) {
+            const balls = [];
+            for (let i = 0; i < numBalls; i++) {
+                const r = Math.random() * 20 + 10; // Radius between 10-30
+                const x = r + Math.random() * (W - 2 * r);
+                const y = r + Math.random() * (H - 2 * r);
+                const vx = Math.random() * 20 - 10; // Velocity between -10 to 10
+                const vy = Math.random() * 20 - 10;
+                const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+                balls.push(new Ball(x, y, vx, vy, r, color));
+            }
+            return balls;
+        }
+        const balls = createBalls(50);
+
+        // Grid setup
+        const cellSize = 100;
+        const gridWidth = Math.ceil(W / cellSize);
+        const gridHeight = Math.ceil(H / cellSize);
+        const grid = Array.from({ length: gridWidth }, () => Array.from({ length: gridHeight }, () => []));
+
+        // Physics constants
+        const gravity = 9.8; // Gravity acceleration (pixels per frame)
+        const dampingFactor = 0.95; // Damping factor for collisions
+
+        let lastTime = 0;
+
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastTime) / 100; // Time in seconds
+
+            // Apply gravity and update velocities/positions
+            balls.forEach(ball => {
+                ball.vy += gravity * deltaTime;
+                ball.x += ball.vx * deltaTime;
+                ball.y += ball.vy * deltaTime;
+            });
+
+            // Wall collision detection and response
+            balls.forEach(ball => {
+                // X-axis walls
+                if (ball.x - ball.r < 0 || ball.x + ball.r > W) {
+                    ball.vx = -ball.vx * dampingFactor;
+                    ball.x = Math.max(ball.r, Math.min(W - ball.r, ball.x));
+                }
+                // Y-axis walls
+                if (ball.y - ball.r < 0 || ball.y + ball.r > H) {
+                    ball.vy = -ball.vy * dampingFactor;
+                    ball.y = Math.max(ball.r, Math.min(H - ball.r, ball.y));
+                }
+            });
+
+            // Grid-based collision detection
+            grid.forEach(row => row.forEach(cell => cell.length = 0));
+            balls.forEach(ball => {
+                const i = Math.floor(ball.x / cellSize);
+                const j = Math.floor(ball.y / cellSize);
+                if (i >= 0 && i < gridWidth && j >= 0 && j < gridHeight) {
+                    grid[i][j].push(ball);
+                }
+            });
+
+            // Check collisions between balls in grid cells
+            for (let i = 0; i < gridWidth; i++) {
+                for (let j = 0; j < gridHeight; j++) {
+                    const cell = grid[i][j];
+                    for (let di = -1; di <= 1; di++) {
+                        for (let dj = -1; dj <= 1; dj++) {
+                            const ni = i + di;
+                            const nj = j + dj;
+                            if (ni >= 0 && ni < gridWidth && nj >= 0 && nj < gridHeight) {
+                                const neighbor = grid[ni][nj];
+                                cell.forEach(a => neighbor.forEach(b => {
+                                    if (a !== b) checkCollision(a, b);
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Clear and draw
+            ctx.clearRect(0, 0, W, H);
+            balls.forEach(ball => ball.draw());
+
+            lastTime = timestamp;
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Ball-ball collision handling
+        function checkCollision(a, b) {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const distanceSq = dx * dx + dy * dy;
+            const sumRadii = a.r + b.r;
+            if (distanceSq <= sumRadii * sumRadii) {
+                // Separate balls
+                const distance = Math.sqrt(distanceSq);
+                const overlap = sumRadii - distance;
+                a.x += dx * (overlap / (2 * distance));
+                a.y += dy * (overlap / (2 * distance));
+                b.x -= dx * (overlap / (2 * distance));
+                b.y -= dy * (overlap / (2 * distance));
+
+                // Collision response
+                const nx = dx / distance;
+                const ny = dy / distance;
+                const relVel = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+                if (relVel < 0) {
+                    const e = dampingFactor;
+                    const J = -(1 + e) * relVel / (1/a.mass + 1/b.mass);
+                    a.vx += J * nx / a.mass;
+                    a.vy += J * ny / a.mass;
+                    b.vx -= J * nx / b.mass;
+                    b.vy -= J * ny / b.mass;
+                }
+            }
+        }
+
+        // Start the game loop
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <!-- Notes can be added here -->
+    </section>
+</body>
+</html>

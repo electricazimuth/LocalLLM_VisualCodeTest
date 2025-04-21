@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Turret Shooting</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        class Projectile {
+            constructor(x, y, vx, vy, size, color, lifespan) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = size;
+                this.color = color;
+                this.lifespan = lifespan;
+                this.age = 0;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.age++;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            isOffScreen() {
+                return this.x < 0 || this.x > W || this.y < 0 || this.y > H || this.age > this.lifespan;
+            }
+        }
+
+        const turretX = W / 2;
+        const turretY = H - 50;
+        const barrelLength = 30;
+        const projectileSpeed = 5;
+        const projectileSize = 5;
+        const projectileColor = 'red';
+        const projectileLifespan = 100;
+        const firingRate = 10; 
+
+        let mouseX = 0;
+        let mouseY = 0;
+        let lastFireTime = 0;
+        let projectiles = [];
+
+        canvas.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX - canvas.offsetLeft;
+            mouseY = e.clientY - canvas.offsetTop;
+        });
+
+        canvas.addEventListener('click', () => {
+            const currentTime = Date.now();
+            if (currentTime - lastFireTime >= firingRate) {
+                lastFireTime = currentTime;
+                const angle = Math.atan2(mouseY - turretY, mouseX - turretX);
+                const vx = Math.cos(angle) * projectileSpeed;
+                const vy = Math.sin(angle) * projectileSpeed;
+                const newProjectile = new Projectile(turretX, turretY, vx, vy, projectileSize, projectileColor, projectileLifespan);
+                projectiles.push(newProjectile);
+            }
+        });
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            // Draw Turret
+            ctx.beginPath();
+            ctx.rect(turretX - 10, turretY - 10, 20, 20);
+            ctx.fillStyle = 'gray';
+            ctx.fill();
+            ctx.closePath();
+
+            // Draw Barrel
+            const angle = Math.atan2(mouseY - turretY, mouseX - turretX);
+            ctx.beginPath();
+            ctx.moveTo(turretX, turretY);
+            ctx.lineTo(turretX + barrelLength * Math.cos(angle), turretY + barrelLength * Math.sin(angle));
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.closePath();
+
+            // Update and Draw Projectiles
+            for (let i = 0; i < projectiles.length; i++) {
+                projectiles[i].update();
+                projectiles[i].draw();
+                if (projectiles[i].isOffScreen()) {
+                    projectiles.splice(i, 1);
+                    i--;
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+        <p>This code implements a turret shooting game using HTML canvas and JavaScript. It includes features such as mouse input, angle calculation, projectile creation, and projectile management.</p>
+    </section>
+</body>
+</html>

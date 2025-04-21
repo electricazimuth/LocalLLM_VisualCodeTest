@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        const player = {
+            x: W / 2,
+            y: H - 50,
+            width: 30,
+            height: 50,
+            speed: 5,
+            velocityX: 0,
+            velocityY: 0,
+            gravity: 0.5,
+            jumpForce: -12,
+            isJumping: false,
+            acceleration: 0.2,
+            deceleration: 0.3
+        };
+
+        const keys = {
+            left: false,
+            right: false,
+            up: false,
+            down: false
+        };
+
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - (gameLoop.lastTime || timestamp)) / 1000;
+            gameLoop.lastTime = timestamp;
+
+            // Clear canvas (usually needed)
+            ctx.clearRect(0, 0, W, H);
+
+            // --- Update logic ---
+            update(deltaTime);
+
+            // --- Draw logic ---
+            draw();
+        }
+
+        function update(deltaTime) {
+            // Horizontal Movement
+            if (keys.left) {
+                player.velocityX -= player.speed * deltaTime;
+            }
+            if (keys.right) {
+                player.velocityX += player.speed * deltaTime;
+            }
+
+            // Deceleration
+            if (player.velocityX > 0) {
+                player.velocityX -= player.deceleration * deltaTime;
+            } else if (player.velocityX < 0) {
+                player.velocityX += player.deceleration * deltaTime;
+            }
+
+            // Boundary Checks (Horizontal)
+            if (player.x < 0) {
+                player.x = 0;
+                player.velocityX = 0;
+            }
+            if (player.x + player.width > W) {
+                player.x = W - player.width;
+                player.velocityX = 0;
+            }
+
+            // Vertical Movement (Jumping & Gravity)
+            if (keys.up && !player.isJumping) {
+                player.velocityY = player.jumpForce;
+                player.isJumping = true;
+            }
+
+            player.velocityY += player.gravity * deltaTime;
+            player.y += player.velocityY * deltaTime;
+
+            // Boundary Checks (Vertical)
+            if (player.y + player.height > H) {
+                player.y = H - player.height;
+                player.velocityY = 0;
+                player.isJumping = false;
+            }
+            
+            player.x += player.velocityX * deltaTime;
+        }
+
+        function draw() {
+            // Draw Player
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Optional: Draw facing indicator (simplified)
+            if (player.velocityX > 0) {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(player.x + player.width, player.y + player.height / 2 - 2, 5, 4); // Right
+            } else if (player.velocityX < 0) {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(player.x - 5, player.y + player.height / 2 - 2, 5, 4); // Left
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('keydown', (event) => {
+            switch (event.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    keys.left = true;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    keys.right = true;
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                    keys.up = true;
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    keys.down = true;
+                    break;
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            switch (event.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    keys.left = false;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    keys.right = false;
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                    keys.up = false;
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    keys.down = false;
+                    break;
+            }
+        });
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+        <p>
+            This code implements a simple 2D character controlled by arrow keys or WASD.
+            It includes:
+            - Player object with position, size, speed, and gravity.
+            - Keyboard event listeners for movement keys.
+            - Game loop for updating and drawing the scene.
+            - Boundary checks to prevent the player from leaving the screen.
+            - Jumping implemented with jumpForce and isJumping flag.
+            - Gravity applied to the player.
+            - Acceleration and deceleration for horizontal movement.
+            - Optional visual cue to indicate the player's facing direction.
+            - Delta time for frame rate independence.
+        </p>
+    </section>
+</body>
+</html>

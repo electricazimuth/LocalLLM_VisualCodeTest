@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const gravity = 0.2;
+        const damping = 0.9;
+        const ballCount = 50;
+
+        class Ball {
+            constructor(x, y, vx, vy, r, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = r;
+                this.color = color;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            update() {
+                this.vy += gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collisions
+                if (this.x - this.r < 0 || this.x + this.r > W) {
+                    this.vx = -this.vx * damping;
+                    this.x = Math.max(this.r, Math.min(W - this.r, this.x));
+                }
+                if (this.y - this.r < 0 || this.y + this.r > H) {
+                    this.vy = -this.vy * damping;
+                    this.y = Math.max(this.r, Math.min(H - this.r, this.y));
+                }
+            }
+
+            collideWith(other) {
+                const dx = other.x - this.x;
+                const dy = other.y - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const minDistance = this.r + other.r;
+
+                if (distance < minDistance) {
+                    const angle = Math.atan2(dy, dx);
+                    const combinedMass = this.r * this.r + other.r * other.r;
+                    const thisVelocity = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                    const otherVelocity = Math.sqrt(other.vx * other.vx + other.vy * other.vy);
+
+                    const thisVx = thisVelocity * Math.cos(angle);
+                    const thisVy = thisVelocity * Math.sin(angle);
+                    const otherVx = otherVelocity * Math.cos(angle);
+                    const otherVy = otherVelocity * Math.sin(angle);
+
+                    const thisFinalVx = ((this.r * this.r - other.r * other.r) * thisVx + 2 * other.r * other.r * otherVx) / combinedMass;
+                    const otherFinalVx = ((other.r * other.r - this.r * this.r) * otherVx + 2 * this.r * this.r * thisVx) / combinedMass;
+
+                    const thisFinalVy = thisVy;
+                    const otherFinalVy = otherVy;
+
+                    const thisFinalVelocity = {
+                        vx: thisFinalVx * Math.cos(-angle) - thisFinalVy * Math.sin(-angle),
+                        vy: thisFinalVx * Math.sin(-angle) + thisFinalVy * Math.cos(-angle)
+                    };
+
+                    const otherFinalVelocity = {
+                        vx: otherFinalVx * Math.cos(-angle) - otherFinalVy * Math.sin(-angle),
+                        vy: otherFinalVx * Math.sin(-angle) + otherFinalVy * Math.cos(-angle)
+                    };
+
+                    this.vx = thisFinalVelocity.vx;
+                    this.vy = thisFinalVelocity.vy;
+                    other.vx = otherFinalVelocity.vx;
+                    other.vy = otherFinalVelocity.vy;
+
+                    const overlap = 0.5 * (minDistance - distance + 1);
+                    this.x -= overlap * Math.cos(angle);
+                    this.y -= overlap * Math.sin(angle);
+                    other.x += overlap * Math.cos(angle);
+                    other.y += overlap * Math.sin(angle);
+                }
+            }
+        }
+
+        const balls = [];
+        for (let i = 0; i < ballCount; i++) {
+            const r = Math.random() * 10 + 5;
+            const x = Math.random() * (W - 2 * r) + r;
+            const y = Math.random() * (H - 2 * r) + r;
+            const vx = (Math.random() - 0.5) * 4;
+            const vy = (Math.random() - 0.5) * 4;
+            const color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            balls.push(new Ball(x, y, vx, vy, r, color));
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, W, H);
+
+            balls.forEach(ball => ball.update());
+
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    balls[i].collideWith(balls[j]);
+                }
+            }
+
+            balls.forEach(ball => ball.draw());
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <!-- Notes about the implementation -->
+        <!-- 
+        1. Each ball is represented by a Ball class with properties for position, velocity, radius, and color.
+        2. Gravity is applied to each ball's vertical velocity.
+        3. Wall collisions reverse the velocity and apply damping.
+        4. Ball-to-ball collisions are detected and resolved using basic physics principles.
+        5. The simulation uses requestAnimationFrame for smooth animation.
+        -->
+    </section>
+</body>
+</html>

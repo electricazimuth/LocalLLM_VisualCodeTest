@@ -14,17 +14,17 @@ import glob # Import glob for pattern matching
 # --- Configuration ---
 main_start_time = datetime.datetime.now()
 # Path to your koboldcpp.py script
-KOBOLDCPP_SCRIPT = Path("/path_to_koboldcpp/koboldcpp/koboldcpp.py") #.resolve() # Adjust if needed
+KOBOLDCPP_SCRIPT = Path("/home/david/Documents/koboldcpp/koboldcpp.py") #.resolve() # Adjust if needed
 
 # Directory where your models (.gguf) are stored
-MODEL_DIR = Path("/path_to_gguf/Models/") #.expanduser().resolve() # Adjust to your actual model path
+MODEL_DIR = Path("/home/david/Data/Models/") #.expanduser().resolve() # Adjust to your actual model path
 MAX_SIZE_BYTES = 46 * (1024**3) # 50 GiB (using 1024^3)
 MIN_SIZE_BYTES = 1 * (1024**3) # 50 GiB (using 1024^3)
 # Directory where your prompts (.md) are stored
-PROMPT_DIR = Path("/path_to/bench/prompts") #.expanduser().resolve() # Adjust to your actual prompt path
+PROMPT_DIR = Path("/home/david/Documents/bench/prompts") #.expanduser().resolve() # Adjust to your actual prompt path
 
 # Directory to save the results
-RESULTS_DIR = Path("/path_to/bench/results") #.expanduser().resolve()
+RESULTS_DIR = Path("/home/david/Documents/bench/results") #.expanduser().resolve()
 
 # KoboldCpp launch arguments (model path will be added automatically)
 # Make sure the port is consistent
@@ -33,7 +33,7 @@ KOBOLDCPP_ARGS = [
     "python3", str(KOBOLDCPP_SCRIPT),
     "--usecublas", "normal",
     "--port", "5000",
-    "--contextsize", "8192",
+    "--contextsize", "16384",
     "--gpulayers", "96" # Adjust GPU layers if needed per model, or keep common value
     # Add any other common flags you always want to use
 ]
@@ -46,8 +46,8 @@ GRAB_DATA_URL = "http://localhost:5000/api/extra/generate/check"
 # Use the structure you provided
 API_PAYLOAD_TEMPLATE = {
     "n": 1,
-    "max_context_length": 8192,
-    "max_length": 6192, # Reduced max_length for faster testing, adjust as needed
+    "max_context_length": 16384,
+    "max_length": 12384, # Reduced max_length for faster testing, adjust as needed
     "rep_pen": 1.00,
     "temperature": 0.7, # Slightly lower temp for more deterministic benchmark? Adjust as needed
     "top_p": 0.95,
@@ -96,6 +96,42 @@ def model_payload_filter(model_name: str, payload: dict) -> dict:
         print(f"    Applying Qwen filter to payload.")
         payload["temperature"] = 0.4
         payload["top_k"] = 30
+    # Deep Hermes need a specific system prompt, kobold doesnt do system prompts in its API! 
+    if 'deephermes' in model_name.lower():
+        systemthinkprompt = "You are a deep thinking AI, you may use extremely long chains of thought to deeply consider the problem and deliberate with yourself via systematic reasoning processes to help come to a correct solution prior to answering. You should enclose your thoughts and internal monologue inside <think> </think> tags, and then provide your solution or response to the problem.\n"
+        #payload["stop_sequence"] = ["<|start_header_id|>user","<|start_header_id|>assistant", "<|eot_id|>"]
+        ## runs once prompt has been inserted
+        #payload["prompt"].format(prompt=payload_prompt)
+
+        #payload["memory"] = "{{[SYSTEM]}}"+systemthinkprompt
+
+        system = "<|start_header_id|>system<|end_header_id|>\n\n"
+        user = "<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"
+        assistant = "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+
+
+        payload_prompt = payload["prompt"]
+        payload_prompt = payload_prompt.replace("{{[INPUT]}}",user)
+        payload_prompt = payload_prompt.replace("{{[OUTPUT]}}",assistant)
+        payload["prompt"] = payload_prompt
+        payload["memory"] = system+systemthinkprompt
+        payload["stop_sequence"] = ["<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n", "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"]
+         
+        #payload_prompt = payload["prompt"]
+        #payload_prompt = payload_prompt.replace("{{[INPUT]}}","")
+        #payload_prompt = payload_prompt.replace("{{[OUTPUT]}}","")
+        #prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{systemthinkprompt}\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n{payload_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+        #payload["prompt"] = prompt
+    if 'reka-flash' in model_name.lower():
+        payload_prompt = payload["prompt"]
+        payload_prompt = payload_prompt.replace("{{[INPUT]}}","human:\n")
+        payload_prompt = payload_prompt.replace("{{[OUTPUT]}}","<sep> assistant:")
+        payload["prompt"] = payload_prompt
+        payload["stop_sequence"] = ["<sep> human:","human:"]
+
+#        <|start_header_id|>system<|end_header_id|>
+#You are a helpful assistant that answers in JSON. Here's the json schema you must adhere to:\n<schema>\n{schema}\n</schema><|eot_id|>
+
         # payload["min_p"] = 0 # Ensure min_p is handled if needed
     # Add other model-specific adjustments here
     # elif 'mistral' in model_name.lower():
@@ -104,9 +140,9 @@ def model_payload_filter(model_name: str, payload: dict) -> dict:
 
 def model_prompt_filter(model_name: str, prompt: str) -> str:
     """Applies model-specific prompt additions."""
-    #if 'qwq' in model_name.lower(): # Example filter
-    #    print(f"    Applying 'qwq' filter to prompt.")
-    #    prompt += "\nThink step by step but only keep a minimum draft of each thinking step, with 5 words at most. Be concise. Think concisely"
+    if 'qwq' in model_name.lower(): # Example filter
+        print(f"    Applying 'qwq' filter to prompt.")
+        prompt += "\nThink step by step but only keep a minimum draft of each thinking step, with 5 words at most. Be concise. Think concisely"
     # Add other prompt filters here
     return prompt
 
@@ -431,7 +467,7 @@ for model_idx, model_path in enumerate(model_paths):
 
                 try:
                     # Send PRIMARY API request
-                    print(f"    Sending API request (max_length={api_payload['max_length']}, timeout={PRIMARY_API_TIMEOUT}s)...")
+                    print(f"    Sending API request (gen_key={api_payload["genkey"]}, max_length={api_payload['max_length']}, timeout={PRIMARY_API_TIMEOUT}s)...")
                     # print(json.dumps(api_payload, indent=2)) # Uncomment for deep debugging
                     start_req_time = time.time()
                     response = requests.post(API_URL, json=api_payload, timeout=PRIMARY_API_TIMEOUT)

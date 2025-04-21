@@ -1,0 +1,107 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Particle Emitter</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        // Particle class
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 5; // Random horizontal velocity
+                this.vy = (Math.random() - 0.5) * 5; // Random vertical velocity
+                this.size = 2 + Math.random() * 3; // Random size between 2 and 5
+                this.color = 'rgba(0, 0, 0, 0.5)'; // Fixed color with alpha
+                this.lifespan = 1 + Math.random() * 2; // Random lifespan between 1 and 3 seconds
+                this.time = 0; // Time since creation
+            }
+
+            update(deltaTime) {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.time += deltaTime;
+
+                // Apply gravity (optional)
+                this.vy += 0.05;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+
+            isDead() {
+                return this.time > this.lifespan;
+            }
+        }
+
+        // Particle array
+        const particles = [];
+
+        // Function to create particles
+        function createParticles(x, y, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y));
+            }
+        }
+
+        // Event listener for canvas click
+        canvas.addEventListener('mousedown', (event) => {
+            const x = event.offsetX;
+            const y = event.offsetY;
+            createParticles(x, y, 10 + Math.floor(Math.random() * 10));
+        });
+
+        // Game loop
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                particle.update(deltaTime);
+                particle.draw();
+
+                if (particle.isDead()) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+    
+    </section>
+</body>
+</html>
+```
+ <!-- 73.45s -->

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Define the Player object
+        const player = {
+            x: W / 2,
+            y: H - 50,
+            width: 50,
+            height: 50,
+            speed: 5,
+            velocityX: 0,
+            velocityY: 0,
+            acceleration: 0.5,
+            friction: 0.9,
+            jumpStrength: 15,
+            gravity: 1,
+            facing: 'idle', // 'idle', 'left', 'right'
+            onGround: true
+        };
+
+        // Key states
+        const keys = {
+            left: false,
+            right: false,
+            jump: false
+        };
+
+        // Event listeners for key presses
+        window.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+            if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.jump = true;
+        });
+
+        window.addEventListener('keyup', function(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+            if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.jump = false;
+        });
+
+        // Game loop
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update logic
+            updatePlayer();
+
+            // Draw logic
+            drawPlayer();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Update player position and state
+        function updatePlayer() {
+            // Handle horizontal movement
+            if (keys.left) {
+                player.velocityX -= player.acceleration;
+                player.facing = 'left';
+            }
+            if (keys.right) {
+                player.velocityX += player.acceleration;
+                player.facing = 'right';
+            }
+
+            // Apply friction
+            player.velocityX *= player.friction;
+
+            // Jumping
+            if (keys.jump && player.onGround) {
+                player.velocityY = -player.jumpStrength;
+                player.onGround = false;
+            }
+
+            // Apply gravity
+            player.velocityY += player.gravity;
+
+            // Update position
+            player.x += player.velocityX;
+            player.y += player.velocityY;
+
+            // Boundary checks
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > W) player.x = W - player.width;
+            if (player.y + player.height > H) {
+                player.y = H - player.height;
+                player.velocityY = 0;
+                player.onGround = true;
+            }
+
+            // Determine facing direction if not moving
+            if (!keys.left && !keys.right) player.facing = 'idle';
+        }
+
+        // Draw the player
+        function drawPlayer() {
+            // Draw player rectangle
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Draw facing direction indicator
+            ctx.fillStyle = 'black';
+            if (player.facing === 'left') {
+                ctx.fillRect(player.x - 5, player.y + player.height / 2 - 5, 5, 10);
+            } else if (player.facing === 'right') {
+                ctx.fillRect(player.x + player.width, player.y + player.height / 2 - 5, 5, 10);
+            }
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <p>Controls: Use arrow keys or WASD to move left/right. Spacebar or W to jump.</p>
+    </section>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Particle Emitter</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        let particles = [];
+        let isEmitting = false;
+        let mouseX = 0, mouseY = 0;
+        let previousTimestamp = 0;
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                // Random direction and speed
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 3 + 2; // 2-5 pixels per second
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                // Lifespan in seconds
+                this.lifespan = Math.random() * 2 + 1;
+                this.initialLifespan = this.lifespan;
+                // Random color
+                this.color = `rgb(
+                    ${Math.floor(Math.random() * 256)},
+                    ${Math.floor(Math.random() * 256)},
+                    ${Math.floor(Math.random() * 256)}
+                )`;
+                // Size between 2-5 pixels
+                this.size = Math.random() * 3 + 2;
+            }
+
+            update(deltaTime) {
+                // Update position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+
+                // Apply gravity
+                this.vy += 0.1 * deltaTime;
+
+                // Decrease lifespan
+                this.lifespan -= deltaTime;
+
+                // Check if dead
+                if (this.lifespan <= 0) {
+                    this.lifespan = 0;
+                }
+            }
+
+            isDead() {
+                return this.lifespan <= 0;
+            }
+
+            draw() {
+                // Calculate alpha based on remaining lifespan
+                const alpha = this.lifespan / this.initialLifespan;
+                ctx.fillStyle = `${this.color}, ${alpha}`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Event listeners
+        canvas.addEventListener('mousedown', () => isEmitting = true);
+        canvas.addEventListener('mouseup', () => isEmitting = false);
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+
+        function gameLoop(timestamp) {
+            previousTimestamp = previousTimestamp || timestamp;
+            const deltaTime = Math.max(0, (timestamp - previousTimestamp) / 1000);
+            previousTimestamp = timestamp;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update particles
+            let i = particles.length - 1;
+            while (i >= 0) {
+                const particle = particles[i];
+                particle.update(deltaTime);
+                if (particle.isDead()) {
+                    particles.splice(i, 1);
+                }
+                i--;
+            }
+
+            // Emit particles if mouse is down
+            if (isEmitting) {
+                const numParticles = Math.floor(Math.random() * 10) + 10;
+                for (let i = 0; i < numParticles; i++) {
+                    particles.push(new Particle(mouseX, mouseY));
+                }
+            }
+
+            // Draw particles
+            particles.forEach(particle => {
+                particle.draw();
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h3>Implementation Notes:</h3>
+        <ul>
+            <li><strong>Object-Oriented Design:</strong> Uses a Particle class for encapsulation and clean code organization.</li>
+            <li><strong>Efficient Particle Management:</strong> Removes dead particles using a backward loop to avoid index shifts.</li>
+            <li><strong>Delta Time Handling:</strong> Ensures smooth animation across different frame rates.</li>
+            <li><strong>Gravity Simulation:</strong> Applies a downward velocity increment to mimic gravity.</li>
+            <li><strong>Performance Optimization:</strong>
+                <ul>
+                    <li>Uses canvas clearRect for batch clearing</li>
+                    <li>Minimizes DOM access</li>
+                    <li>Efficient array operations for particle management</li>
+                </ul>
+            </li>
+            <li><strong>Feature Highlights:</strong>
+                <ul>
+                    <li>Randomized velocities and colors</li>
+                    <li>Fading particles based on lifespan</li>
+                    <li>Continuous emission while mouse is held down</li>
+                    <li>Size variation between 2-5 pixels</li>
+                </ul>
+            </li>
+        </ul>
+    </section>
+</body>
+</html>

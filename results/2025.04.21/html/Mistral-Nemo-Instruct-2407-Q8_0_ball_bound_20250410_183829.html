@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Ball class
+        class Ball {
+            constructor(x, y, vx, vy, r, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = r;
+                this.color = color;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collision and damping
+                if (this.x - this.r < 0 || this.x + this.r > W) {
+                    this.vx = -this.vx * 0.8;
+                    this.x = Math.max(this.r, Math.min(this.x, W - this.r));
+                }
+                if (this.y - this.r < 0 || this.y + this.r > H) {
+                    this.vy = -this.vy * 0.8;
+                    this.y = Math.max(this.r, Math.min(this.y, H - this.r));
+                }
+            }
+        }
+
+        // Initialize balls
+        const balls = Array.from({ length: 50 }, () => {
+            const r = Math.random() * 20 + 10;
+            return new Ball(
+                Math.random() * (W - 2 * r) + r,
+                Math.random() * (H - 2 * r) + r,
+                Math.random() * 5 - 2.5,
+                Math.random() * 5 - 2.5,
+                r,
+                `hsl(${Math.random() * 360}, 50%, 50%)`
+            );
+        });
+
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update and draw balls
+            for (const ball of balls) {
+                ball.update();
+                ball.draw();
+
+                // Ball-to-ball collision detection and response
+                for (const otherBall of balls) {
+                    if (ball === otherBall) continue;
+                    if (Math.hypot(ball.x - otherBall.x, ball.y - otherBall.y) <= ball.r + otherBall.r) {
+                        const dx = ball.x - otherBall.x;
+                        const dy = ball.y - otherBall.y;
+                        const distance = Math.hypot(dx, dy);
+                        const angle = Math.atan2(dy, dx);
+                        const impulse = 2 * (ball.vx * dx + ball.vy * dy) / (ball.r + otherBall.r);
+                        ball.vx -= impulse * Math.cos(angle);
+                        ball.vy -= impulse * Math.sin(angle);
+                        otherBall.vx += impulse * Math.cos(angle);
+                        otherBall.vy += impulse * Math.sin(angle);
+                    }
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        This simulation uses the HTML Canvas API for rendering and plain JavaScript for physics and game logic. It includes gravity, wall collision with damping, and ball-to-ball collision detection and response. The collision detection is naively implemented with a nested loop, but it can be optimized using spatial partitioning techniques like quadtrees for more balls.
+    </section>
+</body>
+</html>

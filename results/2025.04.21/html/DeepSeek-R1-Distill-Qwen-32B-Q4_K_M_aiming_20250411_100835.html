@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Turret Shooting</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Game state
+        const state = {
+            mouse: { x: 0, y: 0 },
+            projectiles: [],
+            lastFireTime: 0,
+            cooldown: 500 // ms
+        };
+
+        // Turret properties
+        const turret = {
+            x: W / 2,
+            y: H - 50,
+            width: 40,
+            height: 60,
+            barrelLength: 30
+        };
+
+        // Projectile properties
+        class Projectile {
+            constructor(x, y, vx, vy) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = 8;
+                this.color = '#ff4444';
+                this.lifespan = 3000; // ms
+                this.createdAt = Date.now();
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Check if projectile is off screen
+                if (this.x < -this.size || this.x > W + this.size ||
+                    this.y < -this.size || this.y > H + this.size) {
+                    return false;
+                }
+
+                // Check lifespan
+                if (Date.now() - this.createdAt > this.lifespan) {
+                    return false;
+                }
+                return true;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        // Event listeners
+        canvas.addEventListener('mousemove', (e) => {
+            state.mouse.x = e.clientX - canvas.offsetLeft;
+            state.mouse.y = e.clientY - canvas.offsetTop;
+        });
+
+        canvas.addEventListener('click', (e) => {
+            const now = Date.now();
+            if (now - state.lastFireTime > state.cooldown) {
+                fireProjectile();
+                state.lastFireTime = now;
+            }
+        });
+
+        function fireProjectile() {
+            const dx = state.mouse.x - turret.x;
+            const dy = state.mouse.y - turret.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            
+            if (length === 0) return;
+
+            const speed = 8;
+            const vx = (dx / length) * speed;
+            const vy = (dy / length) * speed;
+
+            // Fire from end of barrel
+            const angle = Math.atan2(dy, dx);
+            const barrelEndX = turret.x + Math.cos(angle) * turret.barrelLength;
+            const barrelEndY = turret.y + Math.sin(angle) * turret.barrelLength;
+
+            state.projectiles.push(new Projectile(barrelEndX, barrelEndY, vx, vy));
+        }
+
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Calculate angle
+            const dx = state.mouse.x - turret.x;
+            const dy = state.mouse.y - turret.y;
+            const angle = Math.atan2(dy, dx);
+
+            // Draw turret base
+            ctx.fillStyle = '#444';
+            ctx.fillRect(turret.x - turret.width/2, turret.y - turret.height/2, 
+                        turret.width, turret.height);
+
+            // Draw rotating barrel
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(turret.x, turret.y);
+            ctx.lineTo(turret.x + Math.cos(angle) * turret.barrelLength,
+                      turret.y + Math.sin(angle) * turret.barrelLength);
+            ctx.stroke();
+
+            // Update and draw projectiles
+            state.projectiles = state.projectiles.filter(projectile => {
+                projectile.update();
+                projectile.draw();
+                return true;
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game loop
+        gameLoop();
+
+    </script>
+    <section id="notes">
+        <h3>Game Notes</h3>
+        <ul>
+            <li>Use your mouse to aim the turret</li>
+            <li>Click to fire projectiles</li>
+            <li>Projectiles have a 3-second lifespan</li>
+            <li>Cooldown between shots is 0.5 seconds</li>
+            <li>Projectiles travel at 8 pixels per frame</li>
+        </ul>
+    </section>
+</body>
+</html>

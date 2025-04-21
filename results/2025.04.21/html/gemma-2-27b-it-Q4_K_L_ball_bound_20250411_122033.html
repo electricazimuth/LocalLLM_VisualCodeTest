@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const gravity = 0.2;
+        const damping = 0.8;
+        const numBalls = 50;
+
+        // Ball class
+        class Ball {
+            constructor(x, y, vx, vy, r, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = r;
+                this.color = color;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+
+            update() {
+                this.vy += gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collisions
+                if (this.x + this.r > W || this.x - this.r < 0) {
+                    this.vx = -this.vx * damping;
+                    this.x += this.vx; // Correct position
+                }
+                if (this.y + this.r > H || this.y - this.r < 0) {
+                    this.vy = -this.vy * damping;
+                    this.y += this.vy; // Correct position
+                }
+            }
+        }
+
+        // Create balls
+        const balls = [];
+        for (let i = 0; i < numBalls; i++) {
+            let x = Math.random() * W;
+            let y = Math.random() * H;
+            let r = Math.random() * 15 + 5; // Random radius
+            let vx = (Math.random() - 0.5) * 4;
+            let vy = (Math.random() - 0.5) * 4;
+            let color = `hsl(${Math.random() * 360}, 100%, 50%)`; // Random color
+
+            balls.push(new Ball(x, y, vx, vy, r, color));
+        }
+
+        function checkCollision(ball1, ball2) {
+            const distance = Math.sqrt(Math.pow(ball2.x - ball1.x, 2) + Math.pow(ball2.y - ball1.y, 2));
+            return distance <= ball1.r + ball2.r;
+        }
+
+        function handleCollision(ball1, ball2) {
+            // Simple collision response - reverse velocities on collision
+            const tempVx = ball1.vx;
+            const tempVy = ball1.vy;
+            ball1.vx = ball2.vx;
+            ball1.vy = ball2.vy;
+            ball2.vx = tempVx;
+            ball2.vy = tempVy;
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            for (let i = 0; i < balls.length; i++) {
+                balls[i].update();
+                balls[i].draw();
+
+                // Ball-ball collision detection (naive approach)
+                for (let j = i + 1; j < balls.length; j++) {
+                    if (checkCollision(balls[i], balls[j])) {
+                        handleCollision(balls[i], balls[j]);
+                    }
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+    
+    </section>
+</body>
+</html>

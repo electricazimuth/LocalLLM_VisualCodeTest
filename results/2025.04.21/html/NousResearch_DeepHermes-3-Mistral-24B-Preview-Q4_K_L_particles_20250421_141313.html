@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Particle Emitter</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        let particles = [];
+        let mouseX = 0;
+        let mouseY = 0;
+        let isEmitting = false;
+        let previousTime = performance.now();
+        const gravity = 100; // pixels per second squared
+
+        class Particle {
+            constructor(x, y, vx, vy, lifespan) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.lifespan = lifespan;
+                this.originalLifespan = lifespan;
+                this.r = Math.floor(Math.random() * 256);
+                this.g = Math.floor(Math.random() * 256);
+                this.b = Math.floor(Math.random() * 256);
+                this.size = Math.random() * 3 + 2; // 2-5 pixels
+            }
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                this.lifespan -= deltaTime;
+                this.vy += gravity * deltaTime;
+            }
+            draw(ctx) {
+                const alpha = this.lifespan / this.originalLifespan;
+                ctx.fillStyle = `rgba(${this.r}, ${this.g}, ${this.b}, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+
+        canvas.addEventListener('mousedown', function(e) {
+            isEmitting = true;
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mouseup', function() {
+            isEmitting = false;
+        });
+
+        canvas.addEventListener('mousemove', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - previousTime) / 1000;
+            previousTime = timestamp;
+
+            ctx.clearRect(0, 0, W, H);
+
+            particles.forEach(p => p.update(deltaTime));
+            particles = particles.filter(p => p.lifespan > 0);
+
+            particles.forEach(p => p.draw(ctx));
+
+            if (isEmitting) {
+                for (let i = 0; i < 5; i++) {
+                    const speed = Math.random() * 100 + 50;
+                    const angle = Math.random() * 2 * Math.PI;
+                    const vx = Math.cos(angle) * speed;
+                    const vy = Math.sin(angle) * speed;
+                    const lifespan = Math.random() * 2 + 1;
+                    particles.push(new Particle(mouseX, mouseY, vx, vy, lifespan));
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <!-- Particle system implemented with:
+            - Array management for particles
+            - Delta-time handling for smooth physics
+            - Continuous emission while mouse is held
+            - Randomized particle properties (color, size, velocity)
+            - Optional features: fading, gravity effect
+        -->
+    </section>
+</body>
+</html>

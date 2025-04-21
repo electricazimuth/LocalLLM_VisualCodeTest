@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const player = {
+            x: W/2,
+            y: H - 50,
+            width: 40,
+            height: 60,
+            speed: 5,
+            velocityX: 0,
+            velocityY: 0,
+            gravity: 0.5,
+            jumpForce: -12,
+            isJumping: false,
+            acceleration: 0.5,
+            maxSpeed: 7
+        };
+
+        const keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+            Space: false
+        };
+
+        function handleKeys(event) {
+            if (keys[event.key]) {
+                keys[event.key] = event.type === 'keydown';
+            }
+        }
+
+        function applyMovement(deltaTime) {
+            if (keys.ArrowLeft) {
+                player.velocityX -= player.acceleration;
+            } else if (keys.ArrowRight) {
+                player.velocityX += player.acceleration;
+            } else {
+                player.velocityX *= 0.9;
+            }
+
+            player.velocityX = Math.max(-player.maxSpeed, Math.min(player.velocityX, player.maxSpeed));
+
+            if (keys.Space && !player.isJumping) {
+                player.velocityY = player.jumpForce;
+                player.isJumping = true;
+            }
+
+            player.velocityY += player.gravity;
+            player.y += player.velocityY;
+            player.x += player.velocityX;
+
+            player.x = Math.max(0, Math.min(player.x, W - player.width));
+            player.y = Math.max(0, Math.min(player.y, H - player.height));
+
+            if (player.y >= H - player.height) {
+                player.y = H - player.height;
+                player.velocityY = 0;
+                player.isJumping = false;
+            }
+        }
+
+        function drawPlayer() {
+            ctx.fillStyle = '#FF6B6B';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            
+            ctx.fillStyle = 'black';
+            const eyeSize = 5;
+            const direction = player.velocityX > 0 ? 'right' : player.velocityX < 0 ? 'left' : 'center';
+            
+            switch(direction) {
+                case 'left':
+                    ctx.fillRect(player.x + 10, player.y + 15, eyeSize, eyeSize);
+                    break;
+                case 'right':
+                    ctx.fillRect(player.x + player.width - 20, player.y + 15, eyeSize, eyeSize);
+                    break;
+                default:
+                    ctx.fillRect(player.x + player.width/2 - eyeSize/2, player.y + 15, eyeSize, eyeSize);
+            }
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+            
+            applyMovement(timestamp);
+            drawPlayer();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        document.addEventListener('keydown', handleKeys);
+        document.addEventListener('keyup', handleKeys);
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        - Uses keyboard controls (left/right arrows to move, space to jump)
+        - Implements acceleration/deceleration
+        - Includes basic jumping mechanics
+        - Has boundary checking
+        - Shows directional facing with eye movement
+    </section>
+</body>
+</html>

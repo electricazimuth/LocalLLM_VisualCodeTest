@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Turret Shooting</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        let turretPos = { x: W / 2, y: H - 20 };
+
+        canvas.addEventListener('mousemove', e => {
+            turretPos.x = e.clientX;
+            turretPos.y = e.clientY;
+        });
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            let angle = Math.atan2(turretPos.y - turretPos.y, turretPos.x);
+            ctx.rotate(angle);
+
+            ctx.beginPath();
+            ctx.moveTo(turretPos.x, turretPos.y);
+            ctx.lineTo(e.clientX, e.clientY);
+            ctx.stroke();
+
+            ctx.closePath();
+            ctx.fill();
+
+            gameLoop(requestAnimationFrame(gameLoop));
+        }
+
+        requestAnimationFrame(gameLoop);
+
+        canvas.addEventListener('mousedown', e => {
+            let projectile = {
+                x: turretPos.x,
+                y: turretPos.y,
+                vx: e.clientX - turretPos.x,
+                vy: e.clientY - turretPos.y,
+                size: 5,
+                color: '#f00'
+            };
+
+            // Firing mechanic goes here...
+        });
+    </script>
+    <section id="notes">
+    </section>
+</body>
+</html>

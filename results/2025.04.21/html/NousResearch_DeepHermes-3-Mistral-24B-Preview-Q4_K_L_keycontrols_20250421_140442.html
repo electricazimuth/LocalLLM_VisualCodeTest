@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Player class
+        class Player {
+            constructor(x, y, width, height, gravity, jumpForce, maxSpeed, acceleration) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.gravity = gravity;
+                this.jumpForce = jumpForce;
+                this.maxSpeed = maxSpeed;
+                this.acceleration = acceleration;
+                this.velocityX = 0;
+                this.velocityY = 0;
+                this.isGrounded = true;
+            }
+
+            update(deltaTime, keysPressed) {
+                // Check for jump
+                if (keysPressed.has('Space') && this.isGrounded) {
+                    this.velocityY = -this.jumpForce;
+                    this.isGrounded = false;
+                }
+
+                // Apply gravity
+                this.velocityY += this.gravity * deltaTime;
+
+                // Handle horizontal movement
+                let isMoving = false;
+                if (keysPressed.has('ArrowLeft') || keysPressed.has('KeyA')) {
+                    this.velocityX -= this.acceleration * deltaTime;
+                    isMoving = true;
+                }
+                if (keysPressed.has('ArrowRight') || keysPressed.has('KeyD')) {
+                    this.velocityX += this.acceleration * deltaTime;
+                    isMoving = true;
+                }
+
+                // Cap velocityX
+                this.velocityX = Math.max(-this.maxSpeed, Math.min(this.velocityX, this.maxSpeed));
+
+                // Deceleration if not moving
+                if (!isMoving) {
+                    if (this.velocityX > 0) {
+                        this.velocityX -= this.acceleration * deltaTime;
+                        if (this.velocityX < 0) this.velocityX = 0;
+                    } else if (this.velocityX < 0) {
+                        this.velocityX += this.acceleration * deltaTime;
+                        if (this.velocityX > 0) this.velocityX = 0;
+                    }
+                }
+
+                // Update position
+                this.x += this.velocityX * deltaTime;
+                this.y += this.velocityY * deltaTime;
+
+                // Boundary checks
+                if (this.x < 0) {
+                    this.x = 0;
+                    this.velocityX = 0;
+                } else if (this.x + this.width > W) {
+                    this.x = W - this.width;
+                    this.velocityX = 0;
+                }
+
+                // Check if on ground
+                if (this.y + this.height >= H) {
+                    this.y = H - this.height;
+                    this.velocityY = 0;
+                    this.isGrounded = true;
+                } else {
+                    this.isGrounded = false;
+                }
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = 'blue';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+
+                // Draw indicator (eye)
+                const indicatorSize = 5;
+                const indicatorX = this.x + (this.width / 2);
+                const indicatorY = this.y + (this.height / 2) - 5;
+                ctx.beginPath();
+                if (this.velocityX > 0) {
+                    ctx.arc(indicatorX + this.width / 4, indicatorY, indicatorSize, 0, Math.PI * 2);
+                } else if (this.velocityX < 0) {
+                    ctx.arc(indicatorX - this.width / 4, indicatorY, indicatorSize, 0, Math.PI * 2);
+                } else {
+                    ctx.arc(indicatorX, indicatorY, indicatorSize, 0, Math.PI * 2);
+                }
+                ctx.fillStyle = 'black';
+                ctx.fill();
+            }
+        }
+
+        // Game state
+        const keysPressed = new Set();
+        let lastTime = 0;
+        const player = new Player(W/2 - 25, H - 50, 50, 50, 50, 40, 100, 100);
+
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            keysPressed.add(e.code);
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keysPressed.delete(e.code);
+        });
+
+        // Game loop
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            ctx.clearRect(0, 0, W, H);
+
+            player.update(deltaTime, keysPressed);
+            player.draw(ctx);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game loop
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <!-- Notes about the game implementation -->
+        <h3>Game Controls</h3>
+        <ul>
+            <li>Move left/right: Arrow keys or WASD</li>
+            <li>Jump: Spacebar</li>
+        </ul>
+        <h3>Implementation Details</h3>
+        <ul>
+            <li>Character accelerates up to max speed and decelerates when keys are released.</li>
+            <li>Jumping is only possible while grounded.</li>
+            <li>Facing direction is indicated by a small circle (eye).</li>
+        </ul>
+    </section>
+</body>
+</html>

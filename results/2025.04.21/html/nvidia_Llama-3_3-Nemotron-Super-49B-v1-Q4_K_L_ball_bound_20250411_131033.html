@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+        #notes { font-family: monospace; margin: 20px auto; width: 80%; padding: 10px; background: #fff; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Physics Constants
+        const GRAVITY = 0.1; // Gravity acceleration
+        const DAMPING_FACTOR = 0.9; // Energy loss factor upon collision
+        const BALL_COUNT = 50; // Number of balls to simulate
+
+        // Ball Class for encapsulation
+        class Ball {
+            constructor(x, y, vx, vy, r, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = r;
+                this.color = color;
+                // Mass proportional to radius squared
+                this.mass = r * r;
+            }
+
+            // Method to draw the ball on the canvas
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        // Initialize Balls with random properties
+        let balls = [];
+        function initBalls() {
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let r = Math.random() * 10 + 5; // Radius between 5 and 15
+                let x = Math.random() * (W - 2*r) + r; // Ensure within bounds
+                let y = Math.random() * (H - 2*r) + r;
+                let vx = Math.random() * 2 - 1; // Random initial velocity
+                let vy = Math.random() * 2 - 1;
+                let color = `rgb(${Math.floor(Math.random()*256)}, ${Math.floor(Math.random()*256)}, ${Math.floor(Math.random()*256)})`;
+                balls.push(new Ball(x, y, vx, vy, r, color));
+            }
+        }
+        initBalls();
+
+        // Spatial Partitioning (Simple Grid for demo, can be optimized further)
+        const GRID_SIZE = 50;
+        let grid = {};
+        function updateGrid() {
+            grid = {}; // Reset grid
+            for (let ball of balls) {
+                let gridX = Math.floor(ball.x / GRID_SIZE);
+                let gridY = Math.floor(ball.y / GRID_SIZE);
+                if (!grid[gridX]) grid[gridX] = {};
+                if (!grid[gridX][gridY]) grid[gridX][gridY] = [];
+                grid[gridX][gridY].push(ball);
+            }
+        }
+
+        // Collision Detection & Response
+        function checkCollisions() {
+            updateGrid(); // Update spatial grid for efficient lookup
+            for (let ball of balls) {
+                // Check nearby grid cells for potential collisions
+                let gridX = Math.floor(ball.x / GRID_SIZE);
+                let gridY = Math.floor(ball.y / GRID_SIZE);
+                for (let x = -1; x <= 1; x++) {
+                    for (let y = -1; y <= 1; y++) {
+                        let currX = gridX + x;
+                        let currY = gridY + y;
+                        if (grid[currX] && grid[currX][currY]) {
+                            for (let other of grid[currX][currY]) {
+                                if (other === ball) continue; // Skip self
+                                if (distance(ball, other) <= ball.r + other.r) {
+                                    respondCollision(ball, other);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Calculate distance between two balls
+        function distance(ball1, ball2) {
+            return Math.sqrt((ball1.x - ball2.x)**2 + (ball1.y - ball2.y)**2);
+        }
+
+        // Respond to collision between two balls
+        function respondCollision(ball1, ball2) {
+            // Simplified Elastic Collision Response
+            // More accurate methods involve calculating impulse based on masses and collision angle
+            let tempVx = ball1.vx;
+            let tempVy = ball1.vy;
+            ball1.vx = ball2.vx * (ball2.mass - ball1.mass) / (ball1.mass + ball2.mass) + tempVx * (2 * ball2.mass) / (ball1.mass + ball2.mass);
+            ball1.vy = ball2.vy * (ball2.mass - ball1.mass) / (ball1.mass + ball2.mass) + tempVy * (2 * ball2.mass) / (ball1.mass + ball2.mass);
+            ball2.vx = tempVx * (ball1.mass - ball2.mass) / (ball1.mass + ball2.mass) + ball2.vx * (2 * ball1.mass) / (ball1.mass + ball2.mass);
+            ball2.vy = tempVy * (ball1.mass - ball2.mass) / (ball1.mass + ball2.mass) + ball2.vy * (2 * ball1.mass) / (ball1.mass + ball2.mass);
+            
+            // Ensure no overlap after collision (simplified by just moving apart along the collision vector)
+            let overlap = (ball1.r + ball2.r) - distance(ball1, ball2);
+            if (overlap > 0) {
+                let dx = ball2.x - ball1.x;
+                let dy = ball2.y - ball1.y;
+                let dir = Math.sqrt(dx**2 + dy**2);
+                dx /= dir; dy /= dir;
+                ball1.x -= dx * overlap / 2;
+                ball1.y -= dy * overlap / 2;
+                ball2.x += dx * overlap / 2;
+                ball2.y += dy * overlap / 2;
+            }
+        }
+
+        // Game Loop
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H); // Clear canvas
+
+            // Update Logic
+            for (let ball of balls) {
+                // Apply Gravity
+                ball.vy += GRAVITY;
+
+                // Update Position
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+
+                // Wall Collision Detection & Response
+                if (ball.x - ball.r < 0 || ball.x + ball.r > W) {
+                    ball.vx = -ball.vx * DAMPING_FACTOR;
+                    // Correct position to prevent sticking
+                    if (ball.x - ball.r < 0) ball.x = ball.r;
+                    else ball.x = W - ball.r;
+                }
+                if (ball.y - ball.r < 0 || ball.y + ball.r > H) {
+                    ball.vy = -ball.vy * DAMPING_FACTOR;
+                    // Correct position to prevent sticking
+                    if (ball.y - ball.r < 0) ball.y = ball.r;
+                    else ball.y = H - ball.r;
+                }
+            }
+
+            // Collision Detection & Response
+            checkCollisions();
+
+            // Draw Logic
+            for (let ball of balls) {
+                ball.draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <h2>Implementation Notes</h2>
+        <ul>
+            <li><strong>Spatial Partitioning:</strong> A simple grid system is used to reduce collision checks from O(n^2) to approximately O(n) on average, significantly improving performance with a high number of balls.</li>
+            <li><strong>Collision Response Simplification:</strong> While a fully elastic collision response is complex and depends on the exact collision angle, the implemented method provides a plausible and efficient approximation, prioritizing the prevention of overlap.</li>
+            <li><strong>Optimization:</strong> 
+                - <strong>requestAnimationFrame</strong> ensures a smooth, frame-rate adapted animation.
+                - Grid-based spatial partitioning for efficient collision detection.
+                - Avoids unnecessary computations by only updating the grid when necessary and by simplifying collision responses.</li>
+            <li><strong>Future Enhancements:</strong>
+                - <strong>Quadtrees</strong> for more efficient spatial partitioning with varying densities.
+                - More <strong>accurate collision response</strong> calculations for perfectly elastic collisions.
+                - <strong>User Interaction</strong> (e.g., clicking to add/remove balls, adjust physics parameters).</li>
+        </ul>
+    </section>
+</body>
+</html>

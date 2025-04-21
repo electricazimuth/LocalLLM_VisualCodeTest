@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run and Jump</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Player configuration
+        const player = {
+            x: 400,
+            y: 500,
+            width: 30,
+            height: 50,
+            maxSpeed: 6,
+            acceleration: 0.8,
+            friction: 0.95,
+            gravity: 0.8,
+            velocityX: 0,
+            velocityY: 0,
+            groundY: H - 50
+        };
+
+        // Key press tracking
+        let keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false
+        };
+
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        let lastTimestamp = null;
+
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - (lastTimestamp || timestamp);
+            lastTimestamp = timestamp;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Horizontal movement
+            if (keys.a || keys.d) {
+                if (keys.a) {
+                    player.velocityX = Math.max(
+                        player.velocityX - player.acceleration * deltaTime / 1000,
+                        -player.maxSpeed
+                    );
+                }
+                if (keys.d) {
+                    player.velocityX = Math.min(
+                        player.velocityX + player.acceleration * deltaTime / 1000,
+                        player.maxSpeed
+                    );
+                }
+            } else {
+                player.velocityX *= player.friction;
+            }
+
+            // Vertical movement and gravity
+            player.velocityY += player.gravity * deltaTime / 1000;
+            player.y += player.velocityY * deltaTime / 1000;
+
+            // Ground collision
+            if (player.y + player.height > player.groundY) {
+                player.y = player.groundY - player.height;
+                player.velocityY = 0;
+                player.isJumping = false;
+            }
+
+            // Horizontal boundaries
+            player.x += player.velocityX * deltaTime / 1000;
+            player.x = Math.max(0, Math.min(W - player.width, player.x));
+
+            // Drawing
+            ctx.fillStyle = '#4a90e2';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Facing indicator
+            if (Math.abs(player.velocityX) > 0.1) {
+                ctx.fillStyle = 'white';
+                const eyeX = player.velocityX < 0 
+                    ? player.x + 5 
+                    : player.x + player.width - 5;
+                ctx.beginPath();
+                ctx.arc(eyeX, player.y + 20, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game loop
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <h3>Controls:</h3>
+        <ul>
+            <li>W - Jump</li>
+            <li>A - Move Left</li>
+            <li>D - Move Right</li>
+            <li>Diagonal movement allowed</li>
+        </ul>
+        <p>Blue rectangle with white eye indicates direction</p>
+    </section>
+</body>
+</html>
