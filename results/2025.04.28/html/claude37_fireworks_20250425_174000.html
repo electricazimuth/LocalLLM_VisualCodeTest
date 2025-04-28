@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; } /* Dark background suggested */
+        canvas { border: 1px solid #444; background-color: #000; display: block; margin: 20px auto; } /* Dark canvas bg */
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Constants
+        const GRAVITY = 0.15;
+        const ROCKET_SIZE = 3;
+        const PARTICLE_SIZE_MIN = 2;
+        const PARTICLE_SIZE_MAX = 4;
+        const ROCKET_LAUNCH_MIN_INTERVAL = 500; // ms
+        const ROCKET_LAUNCH_MAX_INTERVAL = 2000; // ms
+        const PARTICLES_PER_EXPLOSION_MIN = 30;
+        const PARTICLES_PER_EXPLOSION_MAX = 80;
+        const PARTICLE_LIFESPAN_MIN = 1000; // ms
+        const PARTICLE_LIFESPAN_MAX = 3000; // ms
+        const EXPLOSION_SIZE = Math.min(W, H) * 0.25; // 25% of canvas dimension
+
+        // Classes
+        class Particle {
+            constructor(x, y, vx, vy, size, color, lifespan) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = size;
+                this.color = color;
+                this.lifespan = lifespan;
+                this.initialLifespan = lifespan;
+                this.isDead = false;
+            }
+
+            update(deltaTime) {
+                // Apply gravity
+                this.vy += GRAVITY * deltaTime / 16;
+                
+                // Update position
+                this.x += this.vx * deltaTime / 16;
+                this.y += this.vy * deltaTime / 16;
+                
+                // Update lifespan
+                this.lifespan -= deltaTime;
+                
+                // Check if particle is dead
+                if (this.lifespan <= 0 || this.y > H) {
+                    this.isDead = true;
+                }
+            }
+
+            draw(ctx) {
+                const alpha = this.lifespan / this.initialLifespan;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        class Rocket extends Particle {
+            constructor(x, y, vx, vy, size, color, explosionHeight) {
+                super(x, y, vx, vy, size, color, Infinity);
+                this.explosionHeight = explosionHeight;
+                this.hasExploded = false;
+                this.tailParticles = [];
+            }
+
+            update(deltaTime) {
+                super.update(deltaTime);
+                
+                // Add tail particles
+                if (Math.random() < 0.5) {
+                    this.tailParticles.push({
+                        x: this.x,
+                        y: this.y,
+                        size: this.size / 2,
+                        alpha: 1
+                    });
+                }
+                
+                // Update tail particles
+                for (let i = this.tailParticles.length - 1; i >= 0; i--) {
+                    const p = this.tailParticles[i];
+                    p.alpha -= 0.05;
+                    if (p.alpha <= 0) {
+                        this.tailParticles.splice(i, 1);
+                    }
+                }
+                
+                // Check if rocket should explode
+                if (this.vy > 0 || this.y <= this.explosionHeight) {
+                    this.hasExploded = true;
+                    this.isDead = true;
+                }
+            }
+
+            draw(ctx) {
+                // Draw rocket
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw tail
+                for (const p of this.tailParticles) {
+                    ctx.globalAlpha = p.alpha;
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // Utility functions
+        function randomInRange(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function randomColor() {
+            const hue = Math.floor(Math.random() * 360);
+            return `hsl(${hue}, 100%, 60%)`;
+        }
+
+        // Game state
+        let particles = [];
+        let lastTimestamp = 0;
+        let timeToNextRocket = 0;
+
+        // Create explosion particles
+        function createExplosion(x, y, color) {
+            const particleCount = Math.floor(randomInRange(PARTICLES_PER_EXPLOSION_MIN, PARTICLES_PER_EXPLOSION_MAX));
+            const explosionParticles = [];
+            
+            for (let i = 0; i < particleCount; i++) {
+                // Calculate random direction and speed
+                const angle = Math.random() * Math.PI * 2;
+                const speed = randomInRange(1, 5);
+                const size = randomInRange(PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX);
+                
+                // Calculate velocity components
+                const velocityX = Math.cos(angle) * speed * (Math.random() * 0.5 + 0.5);
+                const velocityY = Math.sin(angle) * speed * (Math.random() * 0.5 + 0.5);
+                
+                // Random variation in the explosion color
+                let particleColor = color;
+                if (Math.random() < 0.3) {
+                    particleColor = randomColor();
+                }
+                
+                // Create particle with random lifespan
+                const lifespan = randomInRange(PARTICLE_LIFESPAN_MIN, PARTICLE_LIFESPAN_MAX);
+                
+                explosionParticles.push(
+                    new Particle(x, y, velocityX, velocityY, size, particleColor, lifespan)
+                );
+            }
+            
+            return explosionParticles;
+        }
+
+        // Create a new rocket
+        function createRocket() {
+            const x = W / 2 + randomInRange(-W / 6, W / 6);
+            const y = H;
+            const vx = randomInRange(-1, 1);
+            const vy = randomInRange(-12, -15);
+            const explosionHeight = randomInRange(H * 0.2, H * 0.6);
+            const color = randomColor();
+            
+            return new Rocket(x, y, vx, vy, ROCKET_SIZE, color, explosionHeight);
+        }
+
+        // Launch a new rocket
+        function launchRocket() {
+            particles.push(createRocket());
+            timeToNextRocket = randomInRange(ROCKET_LAUNCH_MIN_INTERVAL, ROCKET_LAUNCH_MAX_INTERVAL);
+        }
+
+        // Game loop
+        function gameLoop(timestamp) {
+            // Calculate delta time
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const deltaTime = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+            
+            // Clear canvas
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, W, H);
+            
+            // Update rocket launch timer
+            timeToNextRocket -= deltaTime;
+            if (timeToNextRocket <= 0) {
+                launchRocket();
+            }
+            
+            // Update all particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                particle.update(deltaTime);
+                
+                // Check if rocket has exploded
+                if (particle instanceof Rocket && particle.hasExploded) {
+                    // Create explosion particles
+                    const explosionParticles = createExplosion(
+                        particle.x, 
+                        particle.y, 
+                        particle.color
+                    );
+                    
+                    // Add explosion particles
+                    particles = particles.concat(explosionParticles);
+                }
+                
+                // Remove dead particles
+                if (particle.isDead) {
+                    particles.splice(i, 1);
+                }
+            }
+            
+            // Draw all particles
+            for (const particle of particles) {
+                particle.draw(ctx);
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the simulation
+        launchRocket(); // Launch first rocket immediately
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+    This implementation features:
+    - Efficient particle management with a single array
+    - Delta-time based animation for consistent speed across different frame rates
+    - Object-oriented approach with Particle base class and Rocket subclass
+    - Realistic physics with gravity affecting all particles
+    - Visual enhancements like rocket trails and particle fading
+    - Randomized colors, explosion sizes, launch positions and timings
+    - Memory optimization by removing dead particles
+    </section>
+</body>
+</html>

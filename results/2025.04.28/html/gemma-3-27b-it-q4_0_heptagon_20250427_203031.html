@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Ball Class
+        class Ball {
+            constructor(x, y, r, color, number) {
+                this.x = x;
+                this.y = y;
+                this.r = r;
+                this.color = color;
+                this.vx = 0;
+                this.vy = 0;
+                this.mass = 1; // Simplified mass for now
+                this.number = number;
+                this.spin = Math.random() * 10; // Random spin
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+
+                // Draw number on the ball
+                ctx.fillStyle = 'black';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.number, this.x, this.y);
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+        }
+
+        // Heptagon Class
+        class Heptagon {
+            constructor(x, y, radius) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.vertices = [];
+                this.angle = 0;
+                this.rotationSpeed = (360 / 5) * (Math.PI / 180); // Degrees to radians per second
+
+                for (let i = 0; i < 7; i++) {
+                    const angle = (2 * Math.PI / 7) * i;
+                    const vertexX = x + radius * Math.cos(angle);
+                    const vertexY = y + radius * Math.sin(angle);
+                    this.vertices.push({ x: vertexX, y: vertexY });
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.moveTo(this.vertices[0].x, this.vertices[0].y);
+                for (let i = 1; i < 7; i++) {
+                    ctx.lineTo(this.vertices[i].x, this.vertices[i].y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = 'blue';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            rotate() {
+                this.angle += this.rotationSpeed;
+                for (let i = 0; i < 7; i++) {
+                    const angle = (2 * Math.PI / 7) * i + this.angle;
+                    this.vertices[i].x = this.x + this.radius * Math.cos(angle);
+                    this.vertices[i].y = this.y + this.radius * Math.sin(angle);
+                }
+            }
+        }
+
+        // Game setup
+        const balls = [];
+        const heptagonRadius = 150;
+        const heptagon = new Heptagon(W / 2, H / 2, heptagonRadius);
+        const gravity = 0.2;
+        const damping = 0.8;
+
+        const ballColors = [
+            "#f8b862", "#f6ad49", "#f39800", "#f08300", "#ec6d51", "#ee7948",
+            "#ed6d3d", "#ec6800", "#ee7800", "#eb6238", "#ea5506", "#ea5506",
+            "#eb6101", "#e49e61", "#e45e32", "#e17b34", "#dd7a56", "#db8449",
+            "#d66a35"
+        ];
+
+        // Initialize balls
+        for (let i = 0; i < 20; i++) {
+            const x = W / 2;
+            const y = H / 2;
+            const r = 15;
+            const color = ballColors[i % ballColors.length];
+            const number = i + 1;
+            balls.push(new Ball(x, y, r, color, number));
+            balls[i].vx = (Math.random() - 0.5) * 5;
+            balls[i].vy = (Math.random() - 0.5) * 5;
+        }
+
+        // Collision detection functions
+        function checkWallCollision(ball) {
+            let bounced = false;
+            if (ball.x + ball.r > W || ball.x - ball.r < 0) {
+                ball.vx = -ball.vx * damping;
+                ball.x = Math.max(ball.r, Math.min(ball.x, W - ball.r));
+                bounced = true;
+            }
+            if (ball.y + ball.r > H || ball.y - ball.r < 0) {
+                ball.vy = -ball.vy * damping;
+                ball.y = Math.max(ball.r, Math.min(ball.y, H - ball.r));
+                bounced = true;
+            }
+            return bounced;
+        }
+
+        function checkBallCollision(ball1, ball2) {
+            const dx = ball2.x - ball1.x;
+            const dy = ball2.y - ball1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < ball1.r + ball2.r) {
+                // Collision detected
+                // Simple collision response (exchange velocities)
+                const oldBall1Vx = ball1.vx;
+                const oldBall1Vy = ball1.vy;
+                const oldBall2Vx = ball2.vx;
+                const oldBall2Vy = ball2.vy;
+
+                ball1.vx = oldBall2Vx;
+                ball1.vy = oldBall2Vy;
+                ball2.vx = oldBall1Vx;
+                ball2.vy = oldBall1Vy;
+
+                // Move balls apart to prevent sticking
+                const overlap = (ball1.r + ball2.r - distance) / 2;
+                const angle = Math.atan2(dy, dx);
+                ball1.x -= overlap * Math.cos(angle);
+                ball1.y -= overlap * Math.sin(angle);
+                ball2.x += overlap * Math.cos(angle);
+                ball2.y += overlap * Math.sin(angle);
+            }
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            heptagon.draw();
+            heptagon.rotate();
+
+            for (let i = 0; i < balls.length; i++) {
+                balls[i].update();
+                balls[i].vy += gravity;
+                checkWallCollision(balls[i]);
+
+                // Ball-to-ball collision detection
+                for (let j = i + 1; j < balls.length; j++) {
+                    checkBallCollision(balls[i], balls[j]);
+                }
+
+                balls[i].draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+    This code implements a bouncing ball simulation within a spinning heptagon.
+    The balls are affected by gravity and bounce off the walls with damping.
+    Ball-to-ball collisions are detected and resolved with a simple velocity exchange method.
+    The heptagon rotates continuously.  Performance optimization is limited to a basic ball-to-ball collision check loop.
+    </section>
+</body>
+</html>

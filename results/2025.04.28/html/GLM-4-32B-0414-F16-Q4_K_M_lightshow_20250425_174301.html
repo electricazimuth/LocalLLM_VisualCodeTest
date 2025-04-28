@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Psychedelic Metaballs Ray Marching</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        
+        uniform vec2 u_resolution;
+        uniform float u_time;
+        uniform vec3 u_metaballs[20]; // position.x, position.y, radius
+        
+        // Constants
+        const int MAX_MARCHING_STEPS = 100;
+        const float EPSILON = 0.001;
+        const float MAX_DIST = 40.0;
+        const float SURFACE_DIST = 0.01;
+        
+        // Smooth minimum function for blending metaballs
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+        
+        // Simple sphere SDF
+        float sphereSDF(vec3 p, vec3 center, float radius) {
+            return length(p - center) - radius;
+        }
+        
+        // Get closest distance to any metaball
+        float sceneSDF(vec3 p) {
+            float d = MAX_DIST;
+            
+            // Combine up to 10 metaballs
+            for (int i = 0; i < 10; i++) {
+                if (u_metaballs[i].z <= 0.0) break;
+                
+                float dist = sphereSDF(p, vec3(u_metaballs[i].xy, 0.0), u_metaballs[i].z);
+                d = smin(d, dist, 2.0);
+            }
+            
+            return d;
+        }
+        
+        // Calculate normal using central differences
+        vec3 getNormal(vec3 p) {
+            float d = sceneSDF(p);
+            vec3 n = vec3(0.0);
+            
+            n.x = d - sceneSDF(vec3(p.x + EPSILON, p.y, p.z));
+            n.y = d - sceneSDF(vec3(p.x, p.y + EPSILON, p.z));
+            n.z = d - sceneSDF(vec3(p.x, p.y, p.z + EPSILON));
+            
+            return normalize(n);
+        }
+        
+        // Ray marching function
+        float rayMarch(vec3 ro, vec3 rd) {
+            float dO = 0.0;
+            
+            for (int i = 0; i < MAX_MARCHING_STEPS; i++) {
+                vec3 p = ro + rd * dO;
+                float dS = sceneSDF(p);
+                
+                dO += dS;
+                
+                if (dO > MAX_DIST || dS < SURFACE_DIST) break;
+            }
+            
+            return dO;
+        }
+        
+        // HSL to RGB conversion
+        vec3 hsl2rgb(vec3 hsl) {
+            float h = hsl.x;
+            float s = hsl.y;
+            float l = hsl.z;
+            
+            float c = (1.0 - abs(2.0 * l - 1.0)) * s;
+            float x = c * (1.0 - abs(mod(h * 6.0, 2.0) - 1.0));
+            float m = l - c/2.0;
+            
+            vec3 rgb;
+            
+            if (h < 1.0/6.0) rgb = vec3(c, x, 0.0);
+            else if (h < 2.0/6.0) rgb = vec3(x, c, 0.0);
+            else if (h < 3.0/6.0) rgb = vec3(0.0, c, x);
+            else if (h < 4.0/6.0) rgb = vec3(0.0, x, c);
+            else if (h < 5.0/6.0) rgb = vec3(x, 0.0, c);
+            else rgb = vec3(c, 0.0, x);
+            
+            return rgb + m;
+        }
+        
+        // Main function
+        void main() {
+            vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+            
+            // Camera setup
+            vec3 ro = vec3(0.0, 0.0, 5.0); // Ray origin (camera position)
+            vec3 rd = normalize(vec3(uv, -1.0)); // Ray direction
+            
+            // Ray march
+            float d = rayMarch(ro, rd);
+            
+            // Background gradient
+            vec3 bg = mix(
+                vec3(0.0, 0.0, 0.1),
+                vec3(0.0, 0.0, 0.0),
+                uv.y * 0.5 + 0.5
+            );
+            
+            // Hit detection
+            if (d < MAX_DIST) {
+                vec3 p = ro + rd * d;
+                vec3 normal = getNormal(p);
+                
+                // Calculate distance to camera for fog effect
+                float distToCamera = length(p - ro);
+                float fogFactor = 1.0 - smoothstep(0.0, 10.0, distToCamera / MAX_DIST);
+                
+                // Base color based on position and time
+                float hue = fract(u_time * 0.05 + length(p.xy) * 0.1);
+                float sat = 0.8 + 0.2 * sin(u_time * 0.2);
+                float val = 0.7 + 0.3 * cos(u_time * 0.3 + length(p.xz));
+                
+                vec3 baseColor = hsl2rgb(vec3(hue, sat, val));
+                
+                // Lighting calculation
+                vec3 lightDir = normalize(vec3(sin(u_time * 0.7), cos(u_time * 0.5), 0.5));
+                float diff = max(dot(normal, lightDir), 0.0);
+                vec3 diffuse = baseColor * diff;
+                
+                // Ambient component
+                vec3 ambient = baseColor * 0.3;
+                
+                // Combine lighting
+                vec3 finalColor = ambient + diffuse;
+                
+                // Add glow effect
+                finalColor += baseColor * 0.5 * exp(-d * 0.1);
+                
+                // Apply fog
+                finalColor = mix(finalColor, bg, fogFactor);
+                
+                // Output color
+                gl_FragColor = vec4(finalColor, 1.0);
+            } else {
+                // No hit, output background
+                gl_FragColor = vec4(bg, 1.0);
+            }
+        }
+    </script>
+
+    <script>
+        // --- Standard WebGL Boilerplate ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        // Resize canvas to full window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Compile shader
+        function compileShader(gl, source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+
+            return shader;
+        }
+
+        // Create shader program
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program linking error:', gl.getProgramInfoLog(program));
+                return null;
+            }
+
+            return program;
+        }
+
+        // Get shader sources
+        const vertexShaderSource = document.getElementById('vertex-shader').text;
+        const fragmentShaderSource = document.getElementById('fragment-shader').text;
+
+        // Compile shaders
+        const vertexShader = compileShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
+        const fragmentShader = compileShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
+
+        // Create program
+        const program = createProgram(gl, vertexShader, fragmentShader);
+        gl.useProgram(program);
+
+        // Create a full-screen quad (two triangles)
+        const positions = new Float32Array([
+            -1.0, -1.0,
+             1.0, -1.0,
+            -1.0,  1.0,
+            -1.0,  1.0,
+             1.0, -1.0,
+             1.0,  1.0
+        ]);
+
+        // Create buffer
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+        // Get attribute location
+        const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+        gl.enableVertexAttribArray(positionAttributeLocation);
+        gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // Get uniform locations
+        const resolutionUniformLocation = gl.getUniformLocation(program, 'u_resolution');
+        const timeUniformLocation = gl.getUniformLocation(program, 'u_time');
+        const metaballsUniformLocation = gl.getUniformLocation(program, 'u_metaballs');
+
+        // Set resolution uniform
+        gl.uniform2f(resolutionUniformLocation, canvas.width, canvas.height);
+
+        // Create metaballs data (position.x, position.y, radius)
+        const metaballs = new Float32Array(20 * 3); // 20 metaballs, 3 floats each
+        gl.uniform3fv(metaballsUniformLocation, metaballs);
+
+        // Animation variables
+        let startTime = Date.now();
+        let lastTime = startTime;
+
+        // Animation function
+        function animate() {
+            // Calculate time
+            const currentTime = Date.now();
+            const elapsedTime = (currentTime - startTime) / 1000; // seconds
+            const deltaTime = (currentTime - lastTime) / 1000; // seconds
+            lastTime = currentTime;
+
+            // Update metaballs
+            for (let i = 0; i < 10; i++) {
+                const idx = i * 3;
+                
+                // Base position
+                const centerX = Math.sin(elapsedTime * 0.7 + i * 1.3) * 2.0;
+                const centerY = Math.cos(elapsedTime * 0.5 + i * 0.9) * 2.0;
+                
+                // Radius variation
+                const baseRadius = 0.5 + 0.3 * Math.sin(elapsedTime * 0.3 + i);
+                const radius = baseRadius * (1.0 + 0.5 * Math.sin(elapsedTime * 0.2 + i * 0.7));
+                
+                // Update metaball data
+                metaballs[idx] = centerX;
+                metaballs[idx + 1] = centerY;
+                metaballs[idx + 2] = radius;
+            }
+            
+            // Fill the rest with zeros
+            for (let i = 10; i < 20; i++) {
+                const idx = i * 3;
+                metaballs[idx] = 0;
+                metaballs[idx + 1] = 0;
+                metaballs[idx + 2] = 0;
+            }
+            
+            // Update uniforms
+            gl.uniform3fv(metaballsUniformLocation, metaballs);
+            gl.uniform1f(timeUniformLocation, elapsedTime);
+
+            // Render
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // Request next frame
+            requestAnimationFrame(animate);
+        }
+
+        // Start animation
+        animate();
+    </script>
+
+    <!-- Optional section for notes -->
+    <section id="notes">
+        <h3>Implementation Notes</h3>
+        <p>This psychedelic metaball simulation uses ray marching against Signed Distance Functions (SDFs) to create fluid, organic shapes that blend together.</p>
+        <ul>
+            <li>The <code>smin</code> function implements a smooth minimum to blend metaball distances, creating the characteristic organic merging effect.</li>
+            <li>Ray marching iteratively steps along the ray, using the SDF to determine how far to march at each step.</li>
+            <li>Colors are generated using HSL to RGB conversion with time and position modulation for vibrant, shifting hues.</li>
+            <li>Metaballs move in sinusoidal patterns, changing size over time to create dynamic, flowing visuals.</li>
+        </ul>
+    </section>
+</body>
+</html>

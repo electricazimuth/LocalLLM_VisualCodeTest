@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; } /* Light blue background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color:rgb(207, 247, 255); } /* blue water */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+    
+    <script>
+        // **Canvas Setup**
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        let lastTimestamp = 0; // For delta time calculation
+
+        // **Fish Class for Object-Oriented Design**
+        class Fish {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() * 2 - 1); // Random initial velocity X
+                this.vy = (Math.random() * 2 - 1); // Random initial velocity Y
+                this.speed = Math.sqrt(this.vx**2 + this.vy**2); // Calculate initial speed
+                this.size = Math.random() * 20 + 10; // Random size between 10-30
+                this.color = `rgb(${Math.floor(Math.random()*150)+50}, ${Math.floor(Math.random()*150)+50}, 255)`; // Blue-ish color variation
+                this.direction = Math.atan2(this.vy, this.vx); // Initial direction
+                this.turnSpeed = Math.random() * 0.05 + 0.01; // Random turn speed for wandering
+            }
+            
+            // **Update Fish State**
+            update(delta) {
+                // Wandering behavior: Gradually change direction
+                this.direction += (Math.random() * this.turnSpeed - this.turnSpeed/2) * delta / 1000; // Adjust turn based on delta time
+                // Ensure direction is within 0-2*PI range
+                if (this.direction > Math.PI * 2) this.direction -= Math.PI * 2;
+                if (this.direction < 0) this.direction += Math.PI * 2;
+                
+                // Update velocity based on new direction and maintain speed
+                this.vx = this.speed * Math.cos(this.direction);
+                this.vy = this.speed * Math.sin(this.direction);
+                
+                // Move the fish
+                this.x += this.vx * delta / 10; // Adjust movement based on delta time
+                this.y += this.vy * delta / 10;
+                
+                // **Boundary Interaction**
+                if (this.x - this.size/2 < 0 || this.x + this.size/2 > W) {
+                    this.direction = Math.PI - this.direction; // Reflect direction on X axis
+                    // Optional: Reduce speed on bounce for more realism
+                    // this.speed *= 0.9;
+                }
+                if (this.y - this.size/2 < 0 || this.y + this.size/2 > H) {
+                    this.direction = -this.direction; // Reflect direction on Y axis
+                    // this.speed *= 0.9; // Optional speed reduction
+                }
+                // Ensure fish stays within bounds after direction change
+                this.x = Math.max(this.size/2, Math.min(this.x, W - this.size/2));
+                this.y = Math.max(this.size/2, Math.min(this.y, H - this.size/2));
+            }
+            
+            // **Draw Fish**
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.direction);
+                
+                // Simple Fish Shape (Body & Tail)
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size/2, 0, Math.PI); // Body
+                ctx.lineTo(-this.size, 0); // Tail
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+
+        // **Simulation Setup**
+        const fish = Array(15).fill(0).map(() => new Fish(Math.random()*W, Math.random()*H)); // Initialize 15 fish
+
+        // **Animation Loop**
+        function gameLoop(timestamp) {
+            const delta = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+            
+            // **Clear Canvas**
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = 'rgb(207, 247, 255)'; // Water color
+            ctx.fillRect(0, 0, W, H); // Fill canvas with water color for better visibility
+            
+            // **Update & Draw Logic**
+            fish.forEach(fish => {
+                fish.update(delta);
+                fish.draw();
+            });
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        // **Start Simulation**
+        requestAnimationFrame(gameLoop);
+    </script>
+
+    <section id="notes">
+        <h3>Implementation Notes</h3>
+        <ul>
+            <li><strong>Object-Oriented Design:</strong> Utilized a `Fish` class for encapsulation.</li>
+            <li><strong>Boundary Handling:</strong> Fish reflect direction on hitting edges, with optional speed reduction for realism (commented out).</li>
+            <li><strong>Delta Time:</strong> Implemented for frame-rate independent movement and turning.</li>
+            <li><strong>Variation:</strong> Randomized size, color, speed, and turn speed for each fish.</li>
+            <li><strong>Simplifications:</strong> 
+                <ul>
+                    <li>No separate tail wiggle due to complexity vs. visual gain in this scope.</li>
+                    <li>No static background elements added for focus on core simulation.</li>
+                </ul>
+            </li>
+            <li><strong>Future Enhancements:</strong> Consider adding school behavior, more complex shapes, or interactive elements.</li>
+        </ul>
+    </section>
+</body>
+</html>

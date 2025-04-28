@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chicken Simulation</title>
+    <style>
+        body { margin: 10px; overflow: hidden; background-color: #eee; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #999; background-color: #90ee90; }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const WIDTH = canvas.width;
+        const HEIGHT = canvas.height;
+
+        class Egg {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.timestamp = performance.now(); // For expiration if needed
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, 6, 9, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Chicken {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.angle = Math.random() * Math.PI * 2;
+                this.speed = 40 + Math.random() * 20;
+                this.state = 'wandering';
+                this.stateTimer = 0;
+                this.eggLayInterval = 3000 + Math.random() * 2000;
+                this.lastEggTime = 0;
+                this.size = 16;
+            }
+
+            update(dt, time, eggs) {
+                if (this.state === 'wandering') {
+                    // Move
+                    this.x += Math.cos(this.angle) * this.speed * dt;
+                    this.y += Math.sin(this.angle) * this.speed * dt;
+
+                    // Bounce off walls
+                    if (this.x < this.size || this.x > WIDTH - this.size) {
+                        this.angle = Math.PI - this.angle;
+                        this.x = Math.max(this.size, Math.min(this.x, WIDTH - this.size));
+                    }
+                    if (this.y < this.size || this.y > HEIGHT - this.size) {
+                        this.angle = -this.angle;
+                        this.y = Math.max(this.size, Math.min(this.y, HEIGHT - this.size));
+                    }
+
+                    // Occasionally change direction
+                    if (Math.random() < 0.01) {
+                        this.angle += (Math.random() - 0.5) * Math.PI / 2;
+                    }
+
+                    // Lay egg condition
+                    if (time - this.lastEggTime > this.eggLayInterval) {
+                        this.state = 'laying';
+                        this.stateTimer = 0;
+                        this.lastEggTime = time;
+                        this.speed = 0;
+                    }
+
+                } else if (this.state === 'laying') {
+                    this.stateTimer += dt * 1000;
+                    if (this.stateTimer > 1000) {
+                        const offsetX = -Math.cos(this.angle) * 10;
+                        const offsetY = -Math.sin(this.angle) * 10;
+                        eggs.push(new Egg(this.x + offsetX, this.y + offsetY));
+                        this.state = 'wandering';
+                        this.speed = 40 + Math.random() * 20;
+                        this.eggLayInterval = 3000 + Math.random() * 2000;
+                    }
+                }
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Body
+                ctx.fillStyle = this.state === 'laying' ? 'orange' : 'yellow';
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Beak
+                ctx.fillStyle = 'red';
+                ctx.beginPath();
+                ctx.moveTo(this.size, 0);
+                ctx.lineTo(this.size + 6, -4);
+                ctx.lineTo(this.size + 6, 4);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        const chicken = new Chicken(WIDTH / 2, HEIGHT / 2);
+        const eggs = [];
+
+        let lastTime = performance.now();
+
+        function loop(currentTime) {
+            const dt = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+
+            // Update
+            chicken.update(dt, currentTime, eggs);
+
+            // Draw
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            chicken.draw(ctx);
+            for (let egg of eggs) {
+                egg.draw(ctx);
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+
+    <section id="notes">
+        <h3>Developer Notes</h3>
+        <ul>
+            <li>The chicken uses a simple random walk AI with bouncing off canvas edges.</li>
+            <li>The laying state halts movement and changes color to indicate action.</li>
+            <li>Eggs are laid behind the chicken based on its current orientation.</li>
+            <li>Delta time ensures consistent animation speed across frame rates.</li>
+            <li>Eggs persist indefinitely but a timeout logic could be added easily if needed.</li>
+        </ul>
+    </section>
+</body>
+</html>

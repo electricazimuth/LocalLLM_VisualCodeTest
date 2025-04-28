@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chicken Simulation</title>
+    <style>
+        body { margin: 10px; overflow: hidden; background-color: #eee; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #999; background-color: #90ee90; } /* Light green grass background */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        // Get canvas and context
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Constants
+        const CANVAS_WIDTH = canvas.width;
+        const CANVAS_HEIGHT = canvas.height;
+        const MAX_EGGS = 20;  // Maximum number of eggs on screen
+        
+        // Chicken class
+        class Chicken {
+            constructor() {
+                // Position
+                this.x = CANVAS_WIDTH / 2;
+                this.y = CANVAS_HEIGHT / 2;
+                
+                // Size
+                this.radius = 20;
+                
+                // Movement
+                this.speed = 60; // pixels per second
+                this.direction = Math.random() * Math.PI * 2; // random direction in radians
+                
+                // State management
+                this.state = 'wandering'; // 'wandering' or 'laying'
+                this.directionChangeTimer = 0;
+                this.directionChangeInterval = 2 + Math.random() * 2; // seconds
+                
+                // Egg laying
+                this.eggLayingTimer = 0;
+                this.eggLayingInterval = 5 + Math.random() * 3; // seconds between laying eggs
+                this.layingDuration = 1.5; // seconds spent in laying state
+            }
+            
+            update(deltaTime) {
+                // Update timers
+                this.directionChangeTimer += deltaTime;
+                this.eggLayingTimer += deltaTime;
+                
+                // State logic
+                if (this.state === 'wandering') {
+                    // Move chicken
+                    this.x += Math.cos(this.direction) * this.speed * deltaTime;
+                    this.y += Math.sin(this.direction) * this.speed * deltaTime;
+                    
+                    // Boundary checking with turn response
+                    if (this.x < this.radius) {
+                        this.x = this.radius;
+                        this.direction = Math.PI - this.direction;
+                    } else if (this.x > CANVAS_WIDTH - this.radius) {
+                        this.x = CANVAS_WIDTH - this.radius;
+                        this.direction = Math.PI - this.direction;
+                    }
+                    
+                    if (this.y < this.radius) {
+                        this.y = this.radius;
+                        this.direction = -this.direction;
+                    } else if (this.y > CANVAS_HEIGHT - this.radius) {
+                        this.y = CANVAS_HEIGHT - this.radius;
+                        this.direction = -this.direction;
+                    }
+                    
+                    // Random direction changes
+                    if (this.directionChangeTimer >= this.directionChangeInterval) {
+                        this.direction += (Math.random() - 0.5) * Math.PI / 2; // Turn up to 45 degrees
+                        this.directionChangeTimer = 0;
+                        this.directionChangeInterval = 2 + Math.random() * 2;
+                    }
+                    
+                    // Check if it's time to lay an egg
+                    if (this.eggLayingTimer >= this.eggLayingInterval) {
+                        this.state = 'laying';
+                        this.eggLayingTimer = 0;
+                        this.stateChangeTime = 0;
+                    }
+                } else if (this.state === 'laying') {
+                    // Count how long we've been in this state
+                    this.stateChangeTime += deltaTime;
+                    
+                    // Create an egg at the right moment (in the middle of the laying animation)
+                    if (this.stateChangeTime >= this.layingDuration / 2 && !this.hasLaidEgg) {
+                        // Calculate position slightly behind the chicken based on direction
+                        const eggX = this.x - Math.cos(this.direction) * this.radius * 0.7;
+                        const eggY = this.y - Math.sin(this.direction) * this.radius * 0.7;
+                        
+                        // Add egg to collection
+                        eggs.push(new Egg(eggX, eggY));
+                        if (eggs.length > MAX_EGGS) {
+                            eggs.shift(); // Remove oldest egg if we have too many
+                        }
+                        
+                        this.hasLaidEgg = true;
+                    }
+                    
+                    // Go back to wandering after the laying duration
+                    if (this.stateChangeTime >= this.layingDuration) {
+                        this.state = 'wandering';
+                        this.hasLaidEgg = false;
+                        this.eggLayingInterval = 5 + Math.random() * 3; // Reset with new random interval
+                    }
+                }
+            }
+            
+            draw() {
+                // Save context state
+                ctx.save();
+                
+                // Translate and rotate to make chicken face movement direction
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.direction);
+                
+                // Draw body
+                ctx.fillStyle = this.state === 'laying' ? '#ffcccc' : '#ffffff';
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Draw beak
+                ctx.fillStyle = '#ffcc00';
+                ctx.beginPath();
+                ctx.moveTo(this.radius, 0);
+                ctx.lineTo(this.radius + 10, -5);
+                ctx.lineTo(this.radius + 10, 5);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Draw eye
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(this.radius - 5, -8, 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw comb
+                ctx.fillStyle = '#ff0000';
+                ctx.beginPath();
+                ctx.moveTo(-2, -this.radius);
+                ctx.lineTo(2, -this.radius - 8);
+                ctx.lineTo(6, -this.radius);
+                ctx.lineTo(10, -this.radius - 6);
+                ctx.lineTo(14, -this.radius);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Draw wings
+                ctx.fillStyle = '#eeeeee';
+                ctx.beginPath();
+                ctx.ellipse(-5, 5, this.radius * 0.7, this.radius * 0.5, Math.PI / 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Restore context
+                ctx.restore();
+            }
+        }
+        
+        // Egg class
+        class Egg {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 15;
+                this.height = 20;
+                this.age = 0; // Age of the egg in seconds
+                this.lifespan = 30; // How long the egg stays visible (seconds)
+            }
+            
+            update(deltaTime) {
+                this.age += deltaTime;
+            }
+            
+            draw() {
+                // Calculate opacity based on age (fade out as egg gets older)
+                const opacity = Math.max(0, 1 - (this.age / this.lifespan));
+                
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Draw egg
+                ctx.fillStyle = `rgba(255, 255, 240, ${opacity})`;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.width, this.height, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = `rgba(200, 200, 150, ${opacity})`;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                ctx.restore();
+            }
+            
+            isDead() {
+                return this.age >= this.lifespan;
+            }
+        }
+        
+        // Create a chicken and eggs array
+        const chicken = new Chicken();
+        const eggs = [];
+        
+        // Animation variables
+        let lastTime = 0;
+        
+        // Main animation loop
+        function animate(currentTime) {
+            // Calculate delta time in seconds
+            const deltaTime = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            // Update and draw all eggs
+            for (let i = eggs.length - 1; i >= 0; i--) {
+                const egg = eggs[i];
+                egg.update(deltaTime);
+                egg.draw();
+                
+                // Remove dead eggs
+                if (egg.isDead()) {
+                    eggs.splice(i, 1);
+                }
+            }
+            
+            // Update and draw chicken
+            chicken.update(deltaTime);
+            chicken.draw();
+            
+            // Continue animation loop
+            requestAnimationFrame(animate);
+        }
+        
+        // Start animation
+        requestAnimationFrame(animate);
+    </script>
+
+    <section id="notes">
+        Developer notes:
+        - Chicken uses a simple state machine with 'wandering' and 'laying' states
+        - Movement uses delta time for frame-rate independence
+        - Random direction changes and egg laying intervals create natural behavior
+        - The chicken slows and changes color slightly while laying for visual feedback
+        - Eggs are placed slightly behind the chicken based on its facing direction
+        - Eggs slowly fade out over time to avoid cluttering the screen
+        - A limit of 20 eggs ensures the simulation doesn't consume excessive memory
+    </section>
+    
+</body>
+</html>

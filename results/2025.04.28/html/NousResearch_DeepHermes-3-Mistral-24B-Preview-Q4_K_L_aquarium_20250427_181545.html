@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; } /* Light blue background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color: rgb(207, 247, 255); } /* Blue water */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Fish constructor
+        function Fish(x, y, speed, direction, size, color) {
+            this.x = x;
+            this.y = y;
+            this.speed = speed;
+            this.direction = direction;
+            this.radius = size / 2;
+            this.size = size;
+            this.color = color;
+        }
+
+        // Initialize fish array
+        const fishCount = 10;
+        const fishArray = [];
+        for (let i = 0; i < fishCount; i++) {
+            const size = Math.random() * 20 + 10;
+            const radius = size / 2;
+            const x = Math.random() * (W - 2 * radius) + radius;
+            const y = Math.random() * (H - 2 * radius) + radius;
+            const speed = Math.random() * 100 + 50;
+            const direction = Math.random() * 2 * Math.PI;
+            const color = `hsl(${Math.random() * 360}, 50%, 50%)`;
+            fishArray.push(new Fish(x, y, speed, direction, size, color));
+        }
+
+        let previousTime = 0;
+
+        function gameLoop(timestamp) {
+            if (previousTime === 0) {
+                previousTime = timestamp;
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            const dt = (timestamp - previousTime) / 1000;
+            previousTime = timestamp;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update and draw each fish
+            fishArray.forEach(fish => {
+                // Update position
+                fish.x += fish.speed * Math.cos(fish.direction) * dt;
+                fish.y += fish.speed * Math.sin(fish.direction) * dt;
+
+                // Apply wandering behavior
+                fish.direction += Math.random() * 0.2 - 0.1;
+                fish.direction %= 2 * Math.PI;
+
+                // Boundary handling
+                if (fish.x + fish.radius > W || fish.x - fish.radius < 0) {
+                    fish.direction += Math.PI;
+                }
+                if (fish.y + fish.radius > H || fish.y - fish.radius < 0) {
+                    fish.direction += Math.PI;
+                }
+
+                // Draw fish
+                ctx.save();
+                ctx.translate(fish.x, fish.y);
+                ctx.rotate(fish.direction);
+                ctx.beginPath();
+                ctx.moveTo(0, -fish.radius);
+                ctx.lineTo(fish.radius, fish.radius);
+                ctx.lineTo(-fish.radius, fish.radius);
+                ctx.closePath();
+                ctx.fillStyle = fish.color;
+                ctx.fill();
+                ctx.restore();
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the animation loop
+        requestAnimationFrame(gameLoop);
+    </script>
+
+    <section id="notes">
+        <!-- Developer notes -->
+        <p>This simulation uses requestAnimationFrame for smooth animation, with delta-time handling for frame-rate independence.</p>
+        <p>Fish are represented as objects with speed, direction, size, and color. They wander using random direction changes and handle boundaries by reversing direction when edges are hit.</p>
+    </section>
+</body>
+</html>

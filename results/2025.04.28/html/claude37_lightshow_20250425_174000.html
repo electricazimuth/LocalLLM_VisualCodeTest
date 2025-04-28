@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Psychedelic Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <script id="vertexShader" type="x-shader/x-vertex">
+        attribute vec2 aPosition;
+        void main() {
+            gl_Position = vec4(aPosition, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        precision highp float;
+        
+        uniform vec2 uResolution;
+        uniform float uTime;
+        
+        // Number of metaballs
+        #define NUM_METABALLS 6
+        
+        // Ray marching constants
+        #define MAX_STEPS 100
+        #define MAX_DIST 100.0
+        #define SURFACE_DIST 0.01
+        
+        // Metaball parameters
+        uniform vec3 uMetaballPositions[NUM_METABALLS];
+        uniform float uMetaballRadii[NUM_METABALLS];
+        uniform vec3 uMetaballColors[NUM_METABALLS];
+        
+        // Smooth minimum function for blending SDFs
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+        
+        // SDF for a sphere
+        float sdSphere(vec3 p, vec3 center, float radius) {
+            return length(p - center) - radius;
+        }
+        
+        // Combined SDF for all metaballs
+        float sceneSDF(vec3 p) {
+            float dist = MAX_DIST;
+            
+            for (int i = 0; i < NUM_METABALLS; i++) {
+                float sphereDist = sdSphere(p, uMetaballPositions[i], uMetaballRadii[i]);
+                dist = smin(dist, sphereDist, 1.0);
+            }
+            
+            return dist;
+        }
+        
+        // Calculate the normal at point p
+        vec3 calcNormal(vec3 p) {
+            const float h = 0.001;
+            const vec2 k = vec2(1, -1);
+            return normalize(
+                k.xyy * sceneSDF(p + k.xyy * h) +
+                k.yxy * sceneSDF(p + k.yxy * h) +
+                k.yyx * sceneSDF(p + k.yyx * h) +
+                k.xxx * sceneSDF(p + k.xxx * h)
+            );
+        }
+        
+        // Mix colors based on proximity to metaballs
+        vec3 getColor(vec3 p) {
+            vec3 finalColor = vec3(0.0);
+            float totalWeight = 0.0;
+            
+            for (int i = 0; i < NUM_METABALLS; i++) {
+                float dist = length(p - uMetaballPositions[i]);
+                float weight = 1.0 / (dist * dist + 0.01);
+                
+                finalColor += uMetaballColors[i] * weight;
+                totalWeight += weight;
+            }
+            
+            return finalColor / totalWeight;
+        }
+        
+        // Ray marching function
+        float rayMarch(vec3 ro, vec3 rd) {
+            float dO = 0.0;
+            
+            for(int i = 0; i < MAX_STEPS; i++) {
+                vec3 p = ro + rd * dO;
+                float dS = sceneSDF(p);
+                dO += dS;
+                if(dO > MAX_DIST || dS < SURFACE_DIST) break;
+            }
+            
+            return dO;
+        }
+        
+        // Main rendering function
+        vec3 render(vec3 ro, vec3 rd) {
+            float d = rayMarch(ro, rd);
+            vec3 col = vec3(0.0);
+            
+            if(d < MAX_DIST) {
+                vec3 p = ro + rd * d;
+                vec3 n = calcNormal(p);
+                
+                // Basic lighting
+                vec3 lightDir = normalize(vec3(0.5, 0.8, 0.6));
+                float diff = max(dot(n, lightDir), 0.0);
+                
+                // Get color based on proximity to metaballs
+                vec3 objColor = getColor(p);
+                
+                // Apply lighting and psychedelic effects
+                col = objColor * (diff * 0.6 + 0.4);
+                
+                // Add glow effect
+                float glow = 1.0 / (d * d * 0.01 + 0.1);
+                col += objColor * glow * 0.1;
+                
+                // Add subtle pulse
+                col *= 1.0 + 0.1 * sin(uTime * 2.0);
+            }
+            
+            return col;
+        }
+        
+        void main() {
+            // Normalize coordinates
+            vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution.xy) / uResolution.y;
+            
+            // Camera setup
+            vec3 ro = vec3(0.0, 0.0, -5.0); // Camera position
+            vec3 rd = normalize(vec3(uv, 1.0)); // Ray direction
+            
+            // Get color from ray marching
+            vec3 col = render(ro, rd);
+            
+            // Apply post-processing effects
+            col = pow(col, vec3(0.4545)); // Gamma correction
+            col = smoothstep(0.0, 1.0, col); // Contrast
+            
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+
+    <script>
+        // --- WebGL Setup ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        // Resize canvas to window size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // --- Shader Compilation Functions ---
+        function compileShader(gl, source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            
+            return shader;
+        }
+
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program linking error:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            
+            return program;
+        }
+
+        // --- Compile Shaders ---
+        const vertexShaderSource = document.getElementById('vertexShader').text;
+        const fragmentShaderSource = document.getElementById('fragmentShader').text;
+        
+        const vertexShader = compileShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
+        const fragmentShader = compileShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
+        const program = createProgram(gl, vertexShader, fragmentShader);
+        
+        gl.useProgram(program);
+
+        // --- Setup Geometry (Full-screen quad) ---
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        
+        // Define positions for a quad (two triangles) covering the entire clip space
+        const positions = [
+            -1.0, -1.0,
+             1.0, -1.0,
+            -1.0,  1.0,
+             1.0,  1.0
+        ];
+        
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+        
+        const positionAttributeLocation = gl.getAttribLocation(program, 'aPosition');
+        gl.enableVertexAttribArray(positionAttributeLocation);
+        gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // --- Setup Uniforms ---
+        const resolutionLocation = gl.getUniformLocation(program, 'uResolution');
+        const timeLocation = gl.getUniformLocation(program, 'uTime');
+        
+        // Setup arrays for metaball positions, radii, and colors
+        const metaballPositionsLocation = [];
+        const metaballRadiiLocation = [];
+        const metaballColorsLocation = [];
+        
+        for (let i = 0; i < 6; i++) {
+            metaballPositionsLocation[i] = gl.getUniformLocation(program, `uMetaballPositions[${i}]`);
+            metaballRadiiLocation[i] = gl.getUniformLocation(program, `uMetaballRadii[${i}]`);
+            metaballColorsLocation[i] = gl.getUniformLocation(program, `uMetaballColors[${i}]`);
+        }
+
+        // --- Animation Variables ---
+        let startTime = performance.now();
+        let previousTime = startTime;
+        
+        // --- Main Rendering Loop ---
+        function render() {
+            const currentTime = performance.now();
+            const deltaTime = (currentTime - previousTime) / 1000.0; // Convert to seconds
+            const elapsedTime = (currentTime - startTime) / 1000.0;
+            previousTime = currentTime;
+            
+            // Update resolution uniform
+            gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+            
+            // Update time uniform
+            gl.uniform1f(timeLocation, elapsedTime);
+            
+            // Update metaball positions, radii, and colors
+            for (let i = 0; i < 6; i++) {
+                // Create swirling motion
+                const angle = elapsedTime * (0.2 + i * 0.1) + i * Math.PI / 3;
+                const radius = 1.5 + 0.5 * Math.sin(elapsedTime * 0.3 + i);
+                const x = radius * Math.cos(angle);
+                const y = radius * Math.sin(angle);
+                const z = Math.sin(elapsedTime * 0.2 + i * 0.5) * 0.5;
+                
+                // Set position
+                gl.uniform3f(metaballPositionsLocation[i], x, y, z);
+                
+                // Set radius (pulsating)
+                const baseRadius = 0.6 + i * 0.03;
+                const radiusVariation = 0.2 * Math.sin(elapsedTime * (0.5 + i * 0.1) + i);
+                gl.uniform1f(metaballRadiiLocation[i], baseRadius + radiusVariation);
+                
+                // Set color (shifting hues)
+                const hue = (elapsedTime * 0.1 + i / 6) % 1.0;
+                const saturation = 0.8;
+                const lightness = 0.6;
+                
+                // Convert HSL to RGB
+                const h = hue * 6;
+                const c = (1 - Math.abs(2 * lightness - 1)) * saturation;
+                const x1 = c * (1 - Math.abs(h % 2 - 1));
+                const m = lightness - c / 2;
+                
+                let r, g, b;
+                if (h < 1) { r = c; g = x1; b = 0; }
+                else if (h < 2) { r = x1; g = c; b = 0; }
+                else if (h < 3) { r = 0; g = c; b = x1; }
+                else if (h < 4) { r = 0; g = x1; b = c; }
+                else if (h < 5) { r = x1; g = 0; b = c; }
+                else { r = c; g = 0; b = x1; }
+                
+                gl.uniform3f(metaballColorsLocation[i], r + m, g + m, b + m);
+            }
+            
+            // Draw the full-screen quad
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            
+            // Request next frame
+            requestAnimationFrame(render);
+        }
+        
+        // Start the animation
+        render();
+    </script>
+
+    <!-- Developer notes -->
+    <!--
+    <section id="notes">
+        This implementation uses ray marching against signed distance functions (SDFs) to render metaballs. Key aspects:
+        
+        1. Ray Marching: Each pixel casts a ray from the camera. We iteratively step along the ray using the SDF until we hit a surface or max out.
+        
+        2. Metaball SDF: Each metaball is represented as a sphere. We combine multiple sphere SDFs using a polynomial smooth minimum function.
+        
+        3. Coloring: Colors are assigned based on proximity to each metaball, creating smooth gradients where metaballs merge.
+        
+        4. Animation: Metaballs follow sinusoidal paths with different frequencies, creating complex, non-repeating patterns.
+        
+        5. Psychedelic Elements:
+          - HSL color shifting over time
+          - Pulsating radius effects
+          - Glow effects based on distance
+          - Gamma correction for vibrant colors
+        
+        Performance optimizations include:
+        - Limited ray march steps (100)
+        - Early ray termination when surface is hit
+        - Normalized device coordinates for viewport calculation
+    </section>
+    -->
+</body>
+</html>

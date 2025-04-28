@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+// Physics constants
+const GRAVITY = 0.2;
+const DAMPING = 0.85;
+const NUM_BALLS = 50;
+const MAX_RADIUS = 20;
+const MIN_RADIUS = 8;
+const MAX_VELOCITY = 2;
+const GRID_SIZE = 50; // for spatial partitioning
+
+// Ball class
+class Ball {
+    constructor(x, y, vx, vy, r, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = vx;
+        this.vy = vy;
+        this.r = r;
+        this.mass = r * r;
+        this.color = color;
+    }
+
+    applyGravity() {
+        this.vy += GRAVITY;
+    }
+
+    updatePosition() {
+        this.x += this.vx;
+        this.y += this.vy;
+    }
+
+    checkWallCollision() {
+        // Left & Right
+        if (this.x - this.r < 0) {
+            this.x = this.r;
+            this.vx = -this.vx * DAMPING;
+        } else if (this.x + this.r > W) {
+            this.x = W - this.r;
+            this.vx = -this.vx * DAMPING;
+        }
+        // Top & Bottom
+        if (this.y - this.r < 0) {
+            this.y = this.r;
+            this.vy = -this.vy * DAMPING;
+        } else if (this.y + this.r > H) {
+            this.y = H - this.r;
+            this.vy = -this.vy * DAMPING;
+        }
+    }
+
+    draw(ctx) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+    }
+}
+
+// Utility functions
+function getRandomColor() {
+    const colors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0'];
+    return colors[Math.floor(Math.random() * colors.length)];
+}
+
+function distance(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function resolveCollision(b1, b2) {
+    const dx = b2.x - b1.x;
+    const dy = b2.y - b1.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist === 0) return;
+
+    // Overlap resolution
+    const overlap = 0.5 * (dist - b1.r - b2.r);
+    b1.x -= (overlap * dx) / dist;
+    b1.y -= (overlap * dy) / dist;
+    b2.x += (overlap * dx) / dist;
+    b2.y += (overlap * dy) / dist;
+
+    // Normalize collision vector
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    // Relative velocity
+    const vxRel = b1.vx - b2.vx;
+    const vyRel = b1.vy - b2.vy;
+
+    // Relative velocity in normal direction
+    const dot = vxRel * nx + vyRel * ny;
+
+    if (dot > 0) return; // prevent double bounce
+
+    const restitution = 0.9;
+    const impulse = (-(1 + restitution) * dot) / (1 / b1.mass + 1 / b2.mass);
+
+    const ix = (impulse * nx);
+    const iy = (impulse * ny);
+
+    b1.vx += ix / b1.mass;
+    b1.vy += iy / b1.mass;
+    b2.vx -= ix / b2.mass;
+    b2.vy -= iy / b2.mass;
+}
+
+// Spatial grid for optimized collision detection
+class SpatialGrid {
+    constructor(cellSize, width, height) {
+        this.cellSize = cellSize;
+        this.cols = Math.ceil(width / cellSize);
+        this.rows = Math.ceil(height / cellSize);
+        this.grid = [];
+    }
+
+    clear() {
+        this.grid = Array.from({ length: this.cols * this.rows }, () => []);
+    }
+
+    _cellIndex(x, y) {
+        const col = Math.floor(x / this.cellSize);
+        const row = Math.floor(y / this.cellSize);
+        return row * this.cols + col;
+    }
+
+    insert(ball) {
+        const index = this._cellIndex(ball.x, ball.y);
+        if (this.grid[index]) {
+            this.grid[index].push(ball);
+        }
+    }
+
+    getNeighbors(ball) {
+        const col = Math.floor(ball.x / this.cellSize);
+        const row = Math.floor(ball.y / this.cellSize);
+        const neighbors = [];
+
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                const c = col + dx;
+                const r = row + dy;
+                if (c >= 0 && c < this.cols && r >= 0 && r < this.rows) {
+                    const index = r * this.cols + c;
+                    neighbors.push(...this.grid[index]);
+                }
+            }
+        }
+        return neighbors;
+    }
+}
+
+// Initialization
+let balls = [];
+
+function init() {
+    balls = [];
+    for (let i = 0; i < NUM_BALLS; i++) {
+        const r = Math.random() * (MAX_RADIUS - MIN_RADIUS) + MIN_RADIUS;
+        let x = Math.random() * (W - 2 * r) + r;
+        let y = Math.random() * (H - 2 * r) + r;
+        let vx = (Math.random() - 0.5) * MAX_VELOCITY * 2;
+        let vy = (Math.random() - 0.5) * MAX_VELOCITY * 2;
+
+        const color = getRandomColor();
+        balls.push(new Ball(x, y, vx, vy, r, color));
+    }
+}
+
+const grid = new SpatialGrid(GRID_SIZE, W, H);
+
+function gameLoop() {
+    ctx.clearRect(0, 0, W, H);
+
+    grid.clear();
+    for (let ball of balls) {
+        grid.insert(ball);
+    }
+
+    for (let ball of balls) {
+        ball.applyGravity();
+        ball.updatePosition();
+        ball.checkWallCollision();
+
+        const neighbors = grid.getNeighbors(ball);
+        for (let other of neighbors) {
+            if (ball !== other) {
+                const minDist = ball.r + other.r;
+                if (distance(ball, other) < minDist) {
+                    resolveCollision(ball, other);
+                }
+            }
+        }
+
+        ball.draw(ctx);
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+init();
+requestAnimationFrame(gameLoop);
+</script>
+<section id="notes">
+    <ul>
+        <li>Implements gravity, damping, and both wall and inter-ball collisions.</li>
+        <li>Uses a grid-based spatial partitioning system to optimize performance for 50+ balls.</li>
+        <li>Collision response includes overlap correction and a simple impulse-based velocity update.</li>
+        <li>All animation handled smoothly via requestAnimationFrame.</li>
+        <li>No external libraries used – plain JS and Canvas API.</li>
+    </ul>
+</section>
+</body>
+</html>

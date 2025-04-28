@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #f0f0f0; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            border: 1px solid black; 
+            background-color: #fff; 
+            display: block;
+        }
+        .controls {
+            margin: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 8px 12px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        label {
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div class="controls">
+        <button id="resetBtn">Reset Balls</button>
+        <button id="addBtn">Add 10 Balls</button>
+        <div class="slider-container">
+            <label for="gravitySlider">Gravity:</label>
+            <input type="range" id="gravitySlider" min="0" max="1" step="0.01" value="0.2">
+            <span id="gravityValue">0.2</span>
+        </div>
+        <div class="slider-container">
+            <label for="dampingSlider">Damping:</label>
+            <input type="range" id="dampingSlider" min="0.5" max="1" step="0.01" value="0.9">
+            <span id="dampingValue">0.9</span>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Physics constants
+        let gravity = 0.2;
+        let damping = 0.9;
+        const friction = 0.99;
+        const cellSize = 50; // Size of grid cells for spatial partitioning
+
+        // Ball class
+        class Ball {
+            constructor(x, y, vx, vy, radius, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = radius;
+                this.mass = radius * radius; // Mass proportional to area
+                this.color = color;
+            }
+
+            // Draw the ball
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            // Update ball position based on physics
+            update() {
+                // Apply gravity
+                this.vy += gravity;
+
+                // Apply friction to horizontal movement
+                this.vx *= friction;
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collision detection and response
+                if (this.x - this.radius < 0) {
+                    this.x = this.radius;
+                    this.vx = -this.vx * damping;
+                } else if (this.x + this.radius > W) {
+                    this.x = W - this.radius;
+                    this.vx = -this.vx * damping;
+                }
+
+                if (this.y - this.radius < 0) {
+                    this.y = this.radius;
+                    this.vy = -this.vy * damping;
+                } else if (this.y + this.radius > H) {
+                    this.y = H - this.radius;
+                    this.vy = -this.vy * damping;
+                }
+            }
+        }
+
+        // Grid-based spatial partitioning for collision detection
+        class SpatialGrid {
+            constructor(cellSize) {
+                this.cellSize = cellSize;
+                this.grid = {};
+            }
+
+            // Add a ball to the grid
+            addBall(ball) {
+                const cells = this.getCellIndices(ball);
+                cells.forEach(cell => {
+                    if (!this.grid[cell]) {
+                        this.grid[cell] = [];
+                    }
+                    this.grid[cell].push(ball);
+                });
+                return cells;
+            }
+
+            // Get cell indices for a ball
+            getCellIndices(ball) {
+                const x1 = Math.floor((ball.x - ball.radius) / this.cellSize);
+                const y1 = Math.floor((ball.y - ball.radius) / this.cellSize);
+                const x2 = Math.floor((ball.x + ball.radius) / this.cellSize);
+                const y2 = Math.floor((ball.y + ball.radius) / this.cellSize);
+                
+                const cells = [];
+                for (let x = x1; x <= x2; x++) {
+                    for (let y = y1; y <= y2; y++) {
+                        cells.push(`${x},${y}`);
+                    }
+                }
+                return cells;
+            }
+
+            // Get potential colliding balls for a ball
+            getPotentialCollisions(ball) {
+                const cells = this.getCellIndices(ball);
+                const potentialCollisions = new Set();
+                
+                cells.forEach(cell => {
+                    if (this.grid[cell]) {
+                        this.grid[cell].forEach(otherBall => {
+                            if (otherBall !== ball) {
+                                potentialCollisions.add(otherBall);
+                            }
+                        });
+                    }
+                });
+                
+                return Array.from(potentialCollisions);
+            }
+
+            // Clear the grid
+            clear() {
+                this.grid = {};
+            }
+        }
+
+        // Initialize balls
+        let balls = [];
+        const spatialGrid = new SpatialGrid(cellSize);
+
+        function createRandomBall() {
+            const radius = Math.random() * 15 + 10; // Random radius between 10 and 25
+            const x = Math.random() * (W - 2 * radius) + radius;
+            const y = Math.random() * (H - 2 * radius) + radius;
+            const vx = Math.random() * 10 - 5; // Random velocity between -5 and 5
+            const vy = Math.random() * 10 - 5;
+            const color = `hsl(${Math.random() * 360}, 70%, 50%)`; // Random color
+            
+            return new Ball(x, y, vx, vy, radius, color);
+        }
+
+        function initializeBalls(count = 50) {
+            balls = [];
+            for (let i = 0; i < count; i++) {
+                balls.push(createRandomBall());
+            }
+        }
+
+        // Check and resolve collision between two balls
+        function checkCollision(ball1, ball2) {
+            const dx = ball2.x - ball1.x;
+            const dy = ball2.y - ball1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < ball1.radius + ball2.radius) {
+                // Collision detected, calculate collision normal
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Calculate relative velocity
+                const relVelX = ball2.vx - ball1.vx;
+                const relVelY = ball2.vy - ball1.vy;
+                
+                // Calculate relative velocity in terms of the normal direction
+                const relVelDotNormal = relVelX * nx + relVelY * ny;
+                
+                // Do not resolve if objects are moving away from each other
+                if (relVelDotNormal > 0) return;
+                
+                // Calculate restitution (coefficient of elasticity)
+                const restitution = damping;
+                
+                // Calculate impulse scalar
+                let impulseScalar = -(1 + restitution) * relVelDotNormal;
+                impulseScalar /= 1/ball1.mass + 1/ball2.mass;
+                
+                // Apply impulse
+                ball1.vx -= impulseScalar * nx / ball1.mass;
+                ball1.vy -= impulseScalar * ny / ball1.mass;
+                ball2.vx += impulseScalar * nx / ball2.mass;
+                ball2.vy += impulseScalar * ny / ball2.mass;
+                
+                // Correct position to prevent overlap
+                const overlap = (ball1.radius + ball2.radius - distance) / 2;
+                ball1.x -= overlap * nx;
+                ball1.y -= overlap * ny;
+                ball2.x += overlap * nx;
+                ball2.y += overlap * ny;
+            }
+        }
+
+        // Main game loop
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+            
+            // Clear spatial grid
+            spatialGrid.clear();
+            
+            // Add balls to spatial grid
+            balls.forEach(ball => {
+                spatialGrid.addBall(ball);
+            });
+            
+            // Update ball positions and check for collisions
+            balls.forEach(ball => {
+                ball.update();
+                
+                // Get potential collisions from spatial grid
+                const potentialCollisions = spatialGrid.getPotentialCollisions(ball);
+                
+                // Check collisions with potential collisions
+                potentialCollisions.forEach(otherBall => {
+                    checkCollision(ball, otherBall);
+                });
+                
+                // Draw the ball
+                ball.draw();
+            });
+            
+            // Continue the animation loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Event listeners for controls
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            initializeBalls();
+        });
+
+        document.getElementById('addBtn').addEventListener('click', () => {
+            for (let i = 0; i < 10; i++) {
+                balls.push(createRandomBall());
+            }
+        });
+
+        const gravitySlider = document.getElementById('gravitySlider');
+        const gravityValue = document.getElementById('gravityValue');
+        gravitySlider.addEventListener('input', () => {
+            gravity = parseFloat(gravitySlider.value);
+            gravityValue.textContent = gravity.toFixed(2);
+        });
+
+        const dampingSlider = document.getElementById('dampingSlider');
+        const dampingValue = document.getElementById('dampingValue');
+        dampingSlider.addEventListener('input', () => {
+            damping = parseFloat(dampingSlider.value);
+            dampingValue.textContent = damping.toFixed(2);
+        });
+
+        // Initialize and start the game
+        initializeBalls();
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <p>This simulation implements a physics engine with gravity, damping, and collision detection between balls.</p>
+        <p>Optimizations: Spatial partitioning (grid-based) is used to reduce collision detection complexity from O(n²) to approximately O(n).</p>
+        <p>Controls: Adjust gravity and damping with sliders, reset the simulation, or add more balls.</p>
+    </section>
+</body>
+</html>

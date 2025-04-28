@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Happy Mrs. Chicken Simulation</title>
+    <style>
+        body { margin: 10px; overflow: hidden; background-color: #eee; font-family: sans-serif;}
+        canvas {
+            display: block;
+            margin: 20px auto;
+            border: 1px solid #999;
+            background-color: #90ee90; /* Light green grass background */
+            cursor: default;
+        }
+        #notes {
+            width: 512px;
+            margin: 10px auto;
+            padding: 10px;
+            border: 1px dashed #aaa;
+            background-color: #f9f9f9;
+            font-size: 0.9em;
+        }
+        h2 { margin-top: 0;}
+    </style>
+</head>
+<body>
+    <h1>Happy Mrs. Chicken Simulation</h1>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        // --- Simulation Setup ---
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+
+        const eggs = []; // Array to hold all Egg objects
+        let chicken = null; // Will hold the Chicken instance
+        let lastTime = 0;
+
+        // --- Helper Functions ---
+        function getRandom(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        // --- Egg Class ---
+        class Egg {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radiusX = 8;
+                this.radiusY = 10;
+                this.color = '#fff';
+                this.borderColor = '#ddd';
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, this.radiusX, this.radiusY, 0, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = this.borderColor;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+
+        // --- Chicken Class ---
+        class Chicken {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 15;
+                this.speed = 50; // pixels per second
+                this.angle = getRandom(0, Math.PI * 2); // Initial direction
+                this.state = 'wandering'; // 'wandering', 'laying'
+                this.color = '#ffeb3b'; // Yellowish
+                this.beakColor = '#f57c00'; // Orange
+                this.layingColor = '#ffc107'; // Slightly darker yellow when laying
+
+                // Timers (in seconds)
+                this.wanderChangeDirectionTime = getRandom(2, 5); // How long until next direction change
+                this.wanderTimer = this.wanderChangeDirectionTime;
+
+                this.timeUntilNextLay = getRandom(5, 15); // How long until next egg attempt
+                this.layTimer = this.timeUntilNextLay;
+
+                this.layDuration = 0.8; // How long the laying state lasts
+                this.layingTimer = 0;
+            }
+
+            update(dt) {
+                // State Machine Logic
+                switch (this.state) {
+                    case 'wandering':
+                        this.handleWandering(dt);
+                        // Check if it's time to lay an egg
+                        this.layTimer -= dt;
+                        if (this.layTimer <= 0) {
+                            this.startLaying();
+                        }
+                        break;
+
+                    case 'laying':
+                        this.handleLaying(dt);
+                        break;
+                }
+            }
+
+            handleWandering(dt) {
+                // --- Movement ---
+                // Change direction periodically
+                this.wanderTimer -= dt;
+                if (this.wanderTimer <= 0) {
+                    this.angle = getRandom(0, Math.PI * 2); // Pick a new random direction
+                    this.wanderChangeDirectionTime = getRandom(2, 6); // Reset timer duration
+                    this.wanderTimer = this.wanderChangeDirectionTime;
+                    this.speed = getRandom(40, 80); // Slightly vary speed
+                }
+
+                // Calculate movement based on angle and speed
+                const dx = Math.cos(this.angle) * this.speed * dt;
+                const dy = Math.sin(this.angle) * this.speed * dt;
+
+                this.x += dx;
+                this.y += dy;
+
+                // --- Boundary Handling ---
+                let bounced = false;
+                // Check horizontal bounds
+                if (this.x < this.radius) {
+                    this.x = this.radius;
+                    this.angle = Math.PI - this.angle; // Reflect angle horizontally
+                    bounced = true;
+                } else if (this.x > canvasWidth - this.radius) {
+                    this.x = canvasWidth - this.radius;
+                    this.angle = Math.PI - this.angle; // Reflect angle horizontally
+                    bounced = true;
+                }
+
+                // Check vertical bounds
+                if (this.y < this.radius) {
+                    this.y = this.radius;
+                    this.angle = -this.angle; // Reflect angle vertically
+                    bounced = true;
+                } else if (this.y > canvasHeight - this.radius) {
+                    this.y = canvasHeight - this.radius;
+                    this.angle = -this.angle; // Reflect angle vertically
+                     bounced = true;
+                }
+
+                // Normalize angle after potential reflections
+                 this.angle = (this.angle + Math.PI * 2) % (Math.PI * 2);
+
+                 // If bounced, reset wander timer to encourage moving away from edge
+                 if (bounced) {
+                     this.wanderTimer = getRandom(0.5, 1.5); // Short timer after hitting wall
+                 }
+            }
+
+            startLaying() {
+                this.state = 'laying';
+                this.layingTimer = this.layDuration;
+
+                // Create egg slightly behind the chicken
+                const eggOffset = this.radius * 0.8; // How far behind
+                const eggX = this.x - Math.cos(this.angle) * eggOffset;
+                const eggY = this.y - Math.sin(this.angle) * eggOffset;
+
+                // Ensure egg is within bounds (though chicken should be)
+                const clampedEggX = Math.max(10, Math.min(canvasWidth - 10, eggX));
+                const clampedEggY = Math.max(10, Math.min(canvasHeight - 10, eggY));
+
+                const newEgg = new Egg(clampedEggX, clampedEggY);
+                eggs.push(newEgg); // Add to the global array
+
+                // Reset the timer for the *next* lay attempt
+                this.timeUntilNextLay = getRandom(8, 20); // Longer wait after laying
+                this.layTimer = this.timeUntilNextLay;
+            }
+
+            handleLaying(dt) {
+                // Countdown the laying duration
+                this.layingTimer -= dt;
+                if (this.layingTimer <= 0) {
+                    this.state = 'wandering'; // Go back to wandering
+                    // Reset wander timer immediately to pick a new direction after laying
+                    this.wanderTimer = 0;
+                }
+                // Chicken doesn't move while laying
+            }
+
+            draw(ctx) {
+                ctx.save(); // Save current canvas state (transformations, styles)
+
+                // Translate and rotate canvas to draw chicken oriented correctly
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Determine body color based on state
+                const bodyColor = this.state === 'laying' ? this.layingColor : this.color;
+
+                // Draw Body (Circle)
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2); // Draw centered at (0,0) due to translate
+                ctx.fillStyle = bodyColor;
+                ctx.fill();
+                ctx.strokeStyle = '#a1887f'; // Brownish outline
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw Beak (Triangle) - pointing forward (positive x direction in rotated coords)
+                const beakLength = this.radius * 0.6;
+                const beakWidth = this.radius * 0.4;
+                ctx.beginPath();
+                ctx.moveTo(this.radius * 0.8, 0); // Start near edge of body circle
+                ctx.lineTo(this.radius + beakLength, -beakWidth / 2);
+                ctx.lineTo(this.radius + beakLength, beakWidth / 2);
+                ctx.closePath();
+                ctx.fillStyle = this.beakColor;
+                ctx.fill();
+
+                // Draw Eye (small circle) - slightly offset
+                 ctx.beginPath();
+                 ctx.arc(this.radius * 0.4, -this.radius * 0.3, 2, 0, Math.PI * 2); // Relative to center
+                 ctx.fillStyle = '#000';
+                 ctx.fill();
+
+
+                ctx.restore(); // Restore canvas state to how it was before save()
+            }
+        }
+
+        // --- Simulation Loop ---
+        function gameLoop(currentTime) {
+            // Calculate delta time (time elapsed since last frame)
+            const dt = (currentTime - lastTime) / 1000; // Convert ms to seconds
+            lastTime = currentTime;
+
+            // --- Update Phase ---
+            chicken.update(dt);
+            // Eggs don't have an update method in this version
+
+            // --- Draw Phase ---
+            // Clear canvas (draw background)
+            ctx.fillStyle = '#90ee90'; // Light green grass
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+            // Draw all eggs
+            eggs.forEach(egg => egg.draw(ctx));
+
+            // Draw the chicken
+            chicken.draw(ctx);
+
+            // Request the next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Initialization ---
+        function init() {
+            // Create the chicken instance
+            chicken = new Chicken(canvasWidth / 2, canvasHeight / 2);
+            lastTime = performance.now(); // Set initial time for dt calculation
+            // Start the simulation loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Start the simulation ---
+        init();
+
+    </script>
+
+    <!-- Optional section for notes -->
+    <section id="notes">
+        <h2>Developer Notes</h2>
+        <ul>
+            <li><strong>Object Management:</strong> Uses `Chicken` and `Egg` classes. An array `eggs` stores all active egg instances.</li>
+            <li><strong>Chicken AI:</strong>
+                <ul>
+                    <li><strong>Wandering:</strong> The chicken moves at a slightly variable speed and changes direction randomly every few seconds (`wanderTimer`).</li>
+                    <li><strong>Boundary Handling:</strong> Uses simple angle reflection when hitting canvas edges and clamps position to prevent going out of bounds. A short wander timer reset encourages moving away from the edge after a collision.</li>
+                    <li><strong>State Machine:</strong> The chicken switches between `'wandering'` and `'laying'` states.</li>
+                    <li><strong>Egg Laying:</strong> Triggered by `layTimer`. The chicken enters the `'laying'` state for a short duration (`layDuration`), during which it doesn't move. A new `Egg` is created slightly behind the chicken and added to the `eggs` array. The timer for the *next* lay attempt (`timeUntilNextLay`) is reset, often to a longer duration.</li>
+                </ul>
+            </li>
+            <li><strong>Animation:</strong> `requestAnimationFrame` is used for the main loop. Delta time (`dt`) is calculated and passed to update functions for frame-rate independent movement and timing.</li>
+            <li><strong>Drawing:</strong> The canvas is cleared each frame. Eggs are drawn as simple ellipses. The chicken is drawn as a circle with a triangular beak. `ctx.save()`, `ctx.translate()`, `ctx.rotate()`, and `ctx.restore()` are used to orient the chicken graphic in its direction of movement.</li>
+            <li><strong>Visual Cues:</strong> The chicken's body color changes slightly when it's in the 'laying' state.</li>
+        </ul>
+    </section>
+
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chicken Simulation</title>
+    <style>
+        body { margin: 10px; overflow: hidden; background-color: #eee; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #999; background-color: #90ee90; } /* Light green grass background */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        // --- YOUR JAVASCRIPT CODE GOES HERE ---
+
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Chicken class
+        class Chicken {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 20;
+                this.velocity = 2;
+                this.angle = Math.random() * Math.PI * 2;
+                this.state = 'wandering';
+                this.layingTimer = 0;
+                this.layingDuration = 1000; // Duration to lay an egg
+                this.layingInterval = Math.random() * 5000 + 2000; // Time between laying eggs
+                this.beakOffset = 10;
+                this.beakHeight = 5;
+            }
+
+            update(deltaTime) {
+                if (this.state === 'wandering') {
+                    this.move(deltaTime);
+                    this.layingTimer += deltaTime;
+                    if (this.layingTimer >= this.layingInterval) {
+                        this.state = 'laying';
+                        this.layingTimer = 0;
+                    }
+                } else if (this.state === 'laying') {
+                    this.layingTimer += deltaTime;
+                    if (this.layingTimer >= this.layingDuration) {
+                        this.state = 'wandering';
+                        this.layingTimer = 0;
+                        // Lay an egg
+                        eggs.push(new Egg(this.x - this.beakOffset, this.y));
+                    }
+                }
+            }
+
+            move(deltaTime) {
+                this.x += Math.cos(this.angle) * this.velocity * deltaTime / 10;
+                this.y += Math.sin(this.angle) * this.velocity * deltaTime / 10;
+
+                // Boundary handling
+                if (this.x < this.radius || this.x > canvas.width - this.radius) {
+                    this.angle = Math.PI - this.angle;
+                }
+                if (this.y < this.radius || this.y > canvas.height - this.radius) {
+                    this.angle = -this.angle;
+                }
+
+                // Change direction occasionally
+                if (Math.random() < 0.01) {
+                    this.angle += (Math.random() - 0.5) * Math.PI / 2;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, 2 * Math.PI);
+                ctx.fillStyle = 'yellow';
+                ctx.fill();
+
+                // Draw beak
+                ctx.beginPath();
+                ctx.moveTo(this.radius, 0);
+                ctx.lineTo(this.radius + this.beakOffset, -this.beakHeight);
+                ctx.lineTo(this.radius + this.beakOffset, this.beakHeight);
+                ctx.closePath();
+                ctx.fillStyle = 'orange';
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // Egg class
+        class Egg {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 10;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, this.radius, this.radius * 1.5, 0, 0, 2 * Math.PI);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+            }
+        }
+
+        const chicken = new Chicken(canvas.width / 2, canvas.height / 2);
+        const eggs = [];
+
+        let lastTime = 0;
+
+        function animate(time) {
+            let deltaTime = time - lastTime;
+            lastTime = time;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            chicken.update(deltaTime);
+            chicken.draw();
+
+            eggs.forEach(egg => egg.draw());
+
+            requestAnimationFrame(animate);
+        }
+
+        requestAnimationFrame(animate);
+
+    </script>
+
+    <!-- Optional section for notes -->
+    <section id="notes">
+        Developer notes regarding the simulation logic, AI choices, etc.
+    </section>
+</body>
+</html>

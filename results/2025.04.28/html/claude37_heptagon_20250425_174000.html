@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Constants
+        const GRAVITY = 0.2;
+        const DAMPING = 0.8;
+        const FRICTION = 0.98;
+        const BALL_RADIUS = 15;
+        const BALL_COUNT = 20;
+        const HEPTAGON_ROTATION_SPEED = 2 * Math.PI / (60 * 5); // 360 degrees per 5 seconds (in radians per frame at 60fps)
+        
+        // Heptagon properties
+        const HEPTAGON_SIDES = 7;
+        const HEPTAGON_RADIUS = Math.min(W, H) * 0.4; // Size of the heptagon
+        let heptagonAngle = 0; // Current rotation angle
+        
+        // Ball colors
+        const BALL_COLORS = [
+            '#f8b862', '#f6ad49', '#f39800', '#f08300', '#ec6d51', 
+            '#ee7948', '#ed6d3d', '#ec6800', '#ec6800', '#ee7800', 
+            '#eb6238', '#ea5506', '#ea5506', '#eb6101', '#e49e61', 
+            '#e45e32', '#e17b34', '#dd7a56', '#db8449', '#d66a35'
+        ];
+
+        // Ball class
+        class Ball {
+            constructor(id, x, y, vx, vy) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = BALL_RADIUS;
+                this.mass = Math.PI * this.radius * this.radius;
+                this.color = BALL_COLORS[id % BALL_COLORS.length];
+                this.rotation = 0; // Ball rotation angle
+                this.rotationSpeed = 0; // Rotation speed
+            }
+            
+            update() {
+                // Apply gravity
+                this.vy += GRAVITY;
+                
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Apply friction
+                this.vx *= FRICTION;
+                this.vy *= FRICTION;
+                
+                // Update rotation based on horizontal velocity and friction
+                this.rotationSpeed = this.vx / (2 * Math.PI * this.radius) * 8;
+                this.rotation += this.rotationSpeed;
+                this.rotationSpeed *= FRICTION;
+            }
+            
+            draw() {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.stroke();
+                
+                // Draw number with rotation
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                ctx.fillStyle = 'white';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.id + 1, 0, 0);
+                ctx.restore();
+            }
+        }
+
+        // Create heptagon vertices
+        function calculateHeptagonVertices() {
+            const vertices = [];
+            const centerX = W / 2;
+            const centerY = H / 2;
+            
+            for (let i = 0; i < HEPTAGON_SIDES; i++) {
+                const angle = heptagonAngle + (i * 2 * Math.PI / HEPTAGON_SIDES);
+                const x = centerX + HEPTAGON_RADIUS * Math.cos(angle);
+                const y = centerY + HEPTAGON_RADIUS * Math.sin(angle);
+                vertices.push({ x, y });
+            }
+            
+            return vertices;
+        }
+        
+        // Draw heptagon
+        function drawHeptagon(vertices) {
+            ctx.beginPath();
+            ctx.moveTo(vertices[0].x, vertices[0].y);
+            
+            for (let i = 1; i < vertices.length; i++) {
+                ctx.lineTo(vertices[i].x, vertices[i].y);
+            }
+            
+            ctx.closePath();
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        // Check if point is inside heptagon
+        function isPointInHeptagon(x, y, vertices) {
+            let inside = false;
+            
+            for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+                const xi = vertices[i].x;
+                const yi = vertices[i].y;
+                const xj = vertices[j].x;
+                const yj = vertices[j].y;
+                
+                const intersect = ((yi > y) !== (yj > y)) &&
+                    (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                
+                if (intersect) inside = !inside;
+            }
+            
+            return inside;
+        }
+        
+        // Get closest point on a line segment
+        function closestPointOnLine(px, py, x1, y1, x2, y2) {
+            const A = px - x1;
+            const B = py - y1;
+            const C = x2 - x1;
+            const D = y2 - y1;
+            
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+            
+            if (lenSq !== 0) param = dot / lenSq;
+            
+            let xx, yy;
+            
+            if (param < 0) {
+                xx = x1;
+                yy = y1;
+            } else if (param > 1) {
+                xx = x2;
+                yy = y2;
+            } else {
+                xx = x1 + param * C;
+                yy = y1 + param * D;
+            }
+            
+            return { x: xx, y: yy };
+        }
+        
+        // Check collision with heptagon walls
+        function checkWallCollision(ball, vertices) {
+            if (!isPointInHeptagon(ball.x, ball.y, vertices)) {
+                // Find the closest wall
+                let minDist = Infinity;
+                let closestPoint = null;
+                let nx = 0;
+                let ny = 0;
+                
+                for (let i = 0; i < vertices.length; i++) {
+                    const j = (i + 1) % vertices.length;
+                    const point = closestPointOnLine(
+                        ball.x, ball.y,
+                        vertices[i].x, vertices[i].y,
+                        vertices[j].x, vertices[j].y
+                    );
+                    
+                    const dist = Math.sqrt((ball.x - point.x) ** 2 + (ball.y - point.y) ** 2);
+                    
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestPoint = point;
+                        
+                        // Calculate normal vector
+                        const dx = vertices[j].x - vertices[i].x;
+                        const dy = vertices[j].y - vertices[i].y;
+                        const len = Math.sqrt(dx * dx + dy * dy);
+                        
+                        // Rotate 90 degrees to get normal vector pointing inward
+                        nx = -dy / len;
+                        ny = dx / len;
+                    }
+                }
+                
+                // Check if collision occurred
+                if (minDist < ball.radius) {
+                    // Get overlap
+                    const overlap = ball.radius - minDist;
+                    
+                    // Move ball back into the heptagon
+                    ball.x += nx * overlap;
+                    ball.y += ny * overlap;
+                    
+                    // Calculate reflection
+                    const dotProduct = ball.vx * nx + ball.vy * ny;
+                    
+                    // Apply impulse in the direction of the normal
+                    ball.vx -= 2 * dotProduct * nx;
+                    ball.vy -= 2 * dotProduct * ny;
+                    
+                    // Apply damping
+                    ball.vx *= DAMPING;
+                    ball.vy *= DAMPING;
+                    
+                    // Update rotation based on collision
+                    ball.rotationSpeed += (ball.vy * nx - ball.vx * ny) / (2 * Math.PI * ball.radius) * 4;
+                    
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+        
+        // Check collision between two balls
+        function checkBallCollision(ballA, ballB) {
+            const dx = ballB.x - ballA.x;
+            const dy = ballB.y - ballA.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < ballA.radius + ballB.radius) {
+                // Collision detected
+                
+                // Calculate unit normal vector
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Calculate relative velocity
+                const relVelX = ballB.vx - ballA.vx;
+                const relVelY = ballB.vy - ballA.vy;
+                
+                // Calculate relative velocity in terms of normal direction
+                const velAlongNormal = relVelX * nx + relVelY * ny;
+                
+                // Do not resolve if velocities are separating
+                if (velAlongNormal > 0) return;
+                
+                // Calculate impulse scalar
+                const restitution = 0.8; // "bounciness" factor
+                const j = -(1 + restitution) * velAlongNormal / (1 / ballA.mass + 1 / ballB.mass);
+                
+                // Apply impulse
+                const impulseX = j * nx;
+                const impulseY = j * ny;
+                
+                ballA.vx -= impulseX / ballA.mass;
+                ballA.vy -= impulseY / ballA.mass;
+                ballB.vx += impulseX / ballB.mass;
+                ballB.vy += impulseY / ballB.mass;
+                
+                // Prevent balls from sticking by moving them apart
+                const overlap = (ballA.radius + ballB.radius - distance) / 2;
+                ballA.x -= overlap * nx;
+                ballA.y -= overlap * ny;
+                ballB.x += overlap * nx;
+                ballB.y += overlap * ny;
+                
+                // Update rotation based on tangential velocity
+                const tangentX = -ny;
+                const tangentY = nx;
+                const dotTangent = relVelX * tangentX + relVelY * tangentY;
+                
+                ballA.rotationSpeed -= dotTangent / (2 * Math.PI * ballA.radius) * 1.5;
+                ballB.rotationSpeed += dotTangent / (2 * Math.PI * ballB.radius) * 1.5;
+            }
+        }
+        
+        // Create balls
+        const balls = [];
+        for (let i = 0; i < BALL_COUNT; i++) {
+            // Start all balls at the center
+            const centerX = W / 2;
+            const centerY = H / 2;
+            
+            // Give small random initial velocities
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 2;
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+            
+            balls.push(new Ball(i, centerX, centerY, vx, vy));
+        }
+        
+        // Spatial partitioning for efficient collision detection
+        class Grid {
+            constructor(width, height, cellSize) {
+                this.cellSize = cellSize;
+                this.width = Math.ceil(width / cellSize);
+                this.height = Math.ceil(height / cellSize);
+                this.cells = new Array(this.width * this.height).fill().map(() => []);
+            }
+            
+            clear() {
+                for (let i = 0; i < this.cells.length; i++) {
+                    this.cells[i] = [];
+                }
+            }
+            
+            getCellIndex(x, y) {
+                const cellX = Math.floor(x / this.cellSize);
+                const cellY = Math.floor(y / this.cellSize);
+                
+                if (cellX < 0 || cellX >= this.width || cellY < 0 || cellY >= this.height) {
+                    return -1;
+                }
+                
+                return cellY * this.width + cellX;
+            }
+            
+            insert(ball) {
+                const index = this.getCellIndex(ball.x, ball.y);
+                if (index !== -1) {
+                    this.cells[index].push(ball);
+                }
+            }
+            
+            getPotentialCollisions(ball) {
+                const candidates = new Set();
+                
+                const cellX = Math.floor(ball.x / this.cellSize);
+                const cellY = Math.floor(ball.y / this.cellSize);
+                
+                // Check current cell and neighboring cells
+                for (let y = Math.max(0, cellY - 1); y <= Math.min(this.height - 1, cellY + 1); y++) {
+                    for (let x = Math.max(0, cellX - 1); x <= Math.min(this.width - 1, cellX + 1); x++) {
+                        const cell = this.cells[y * this.width + x];
+                        cell.forEach(other => {
+                            if (other !== ball) {
+                                candidates.add(other);
+                            }
+                        });
+                    }
+                }
+                
+                return candidates;
+            }
+        }
+        
+        // Create spatial grid
+        const grid = new Grid(W, H, BALL_RADIUS * 2);
+        
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+            
+            // Update heptagon rotation
+            heptagonAngle += HEPTAGON_ROTATION_SPEED;
+            const vertices = calculateHeptagonVertices();
+            
+            // Draw heptagon
+            drawHeptagon(vertices);
+            
+            // Update and check wall collisions
+            for (const ball of balls) {
+                ball.update();
+                checkWallCollision(ball, vertices);
+            }
+            
+            // Clear the grid
+            grid.clear();
+            
+            // Insert balls into grid
+            for (const ball of balls) {
+                grid.insert(ball);
+            }
+            
+            // Check ball-to-ball collisions using grid
+            for (const ball of balls) {
+                const potentialCollisions = grid.getPotentialCollisions(ball);
+                potentialCollisions.forEach(other => {
+                    checkBallCollision(ball, other);
+                });
+            }
+            
+            // Draw balls
+            for (const ball of balls) {
+                ball.draw();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This simulation features:
+        - 20 numbered balls bouncing inside a spinning heptagon
+        - Realistic gravity and friction physics
+        - Ball rotation based on movement and collisions
+        - Efficient collision detection using spatial partitioning
+        - Wall collisions with proper reflection angles
+        - Ball-to-ball collisions with momentum conservation
+    </section>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+        #notes { font-family: monospace; margin: 20px auto; width: 80%; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        const GRAVITY = 0.1; // Gravity acceleration
+        const DAMPING_FACTOR = 0.9; // Damping factor for collisions
+        const BALL_COUNT = 50; // Number of balls
+        const MAX_RADIUS = 15; // Maximum radius for balls
+        const MIN_RADIUS = 5; // Minimum radius for balls
+
+        // Ball class for encapsulation
+        class Ball {
+            constructor(x, y, vx, vy, r, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = r;
+                this.color = color;
+                // Mass proportional to radius squared
+                this.mass = r * r;
+            }
+
+            // Update ball position based on velocity
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                // Apply gravity
+                this.vy += GRAVITY;
+            }
+
+            // Draw the ball on the canvas
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        // Initialize balls with random properties
+        let balls = [];
+        function initBalls() {
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let r = Math.random() * (MAX_RADIUS - MIN_RADIUS) + MIN_RADIUS;
+                let x = Math.random() * (W - 2 * r) + r; // Ensure ball fits within canvas horizontally
+                let y = Math.random() * (H - 2 * r) + r; // Ensure ball fits within canvas vertically
+                let vx = (Math.random() - 0.5) * 4; // Random initial velocity
+                let vy = (Math.random() - 0.5) * 4;
+                let color = `rgb(${Math.floor(Math.random()*256)}, ${Math.floor(Math.random()*256)}, ${Math.floor(Math.random()*256)})`;
+                balls.push(new Ball(x, y, vx, vy, r, color));
+            }
+        }
+
+        // Check and handle collision between two balls
+        function handleBallCollision(ball1, ball2) {
+            // Calculate distance between centers
+            let dx = ball2.x - ball1.x;
+            let dy = ball2.y - ball1.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            let sumRadii = ball1.r + ball2.r;
+
+            if (distance <= sumRadii) {
+                // Collision detected, calculate normal vector
+                let normalX = dx / distance;
+                let normalY = dy / distance;
+
+                // Project velocities onto the normal vector
+                let v1n = ball1.vx * normalX + ball1.vy * normalY;
+                let v2n = ball2.vx * normalX + ball2.vy * normalY;
+
+                // Calculate new velocities after collision (simplified elastic collision)
+                let v1nAfter = ((v1n * (ball1.mass - ball2.mass) + 2 * ball2.mass * v2n) / (ball1.mass + ball2.mass)) * DAMPING_FACTOR;
+                let v2nAfter = ((v2n * (ball2.mass - ball1.mass) + 2 * ball1.mass * v1n) / (ball1.mass + ball2.mass)) * DAMPING_FACTOR;
+
+                // Update velocities
+                ball1.vx = v1nAfter * normalX - (ball1.vx * normalY - ball1.vy * normalX) * normalY;
+                ball1.vy = v1nAfter * normalY + (ball1.vx * normalY - ball1.vy * normalX) * normalX;
+                ball2.vx = v2nAfter * normalX - (ball2.vx * normalY - ball2.vy * normalX) * normalY;
+                ball2.vy = v2nAfter * normalY + (ball2.vx * normalY - ball2.vy * normalX) * normalX;
+
+                // Separate balls to prevent overlap
+                let overlap = sumRadii - distance;
+                ball1.x -= normalX * overlap / 2;
+                ball1.y -= normalY * overlap / 2;
+                ball2.x += normalX * overlap / 2;
+                ball2.y += normalY * overlap / 2;
+            }
+        }
+
+        // Main game loop
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H); // Clear canvas
+
+            // Update and draw each ball
+            for (let i = 0; i < balls.length; i++) {
+                let ball = balls[i];
+                ball.update();
+
+                // Wall collision detection and response
+                if (ball.x - ball.r < 0 || ball.x + ball.r > W) {
+                    ball.vx = -ball.vx * DAMPING_FACTOR;
+                    if (ball.x - ball.r < 0) ball.x = ball.r; // Correct position
+                    else ball.x = W - ball.r;
+                }
+                if (ball.y - ball.r < 0 || ball.y + ball.r > H) {
+                    ball.vy = -ball.vy * DAMPING_FACTOR;
+                    if (ball.y - ball.r < 0) ball.y = ball.r; // Correct position
+                    else ball.y = H - ball.r;
+                }
+
+                // Draw the ball
+                ball.draw();
+            }
+
+            // Ball-to-ball collision detection (Naive O(n^2) approach for simplicity)
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    handleBallCollision(balls[i], balls[j]);
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialization
+        initBalls();
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h2>Notes on Implementation</h2>
+        <ul>
+            <li><strong>Collision Detection Optimization:</strong> For simplicity and given the constraint of no external libraries, a naive O(n^2) approach is used. For >50 balls, consider spatial partitioning (e.g., grid, quadtree) to improve performance.</li>
+            <li><strong>Physics Simplifications:</strong> 
+                - <strong>Elastic Collision Simplification:</strong> The collision response simplifies the calculation by directly adjusting velocities based on mass and damping, focusing on preventing overlap rather than perfectly conserving energy/momentum.
+                - <strong>Mass Calculation:</strong> Mass is proportional to the radius squared for a more realistic representation.</li>
+            <li><strong>Performance Considerations:</strong> 
+                - <strong>`requestAnimationFrame`</strong> for smooth animation.
+                - <strong>Damping Factor</strong> reduces velocity after collisions, simulating energy loss.</li>
+            <li><strong>Future Enhancements:</strong>
+                - Implement spatial partitioning for efficient collision detection with a large number of balls.
+                - Enhance collision response for more realistic physics (e.g., considering tangential velocity components).
+                - Add user interaction (e.g., click to add/remove balls, adjust gravity).</li>
+        </ul>
+    </section>
+</body>
+</html>

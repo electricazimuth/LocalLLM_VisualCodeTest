@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; } /* Dark background suggested */
+        canvas { border: 1px solid #444; background-color: #000; display: block; margin: 20px auto; } /* Dark canvas bg */
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        const gravity = 1.0; // Gravity in pixels per second squared
+
+        let particles = [];
+        let lastTimestamp = 0;
+        let nextLaunchTime = performance.now() + 500 + Math.random() * 1500;
+
+        // Launch a new rocket from the bottom-center
+        function launchRocket() {
+            const rocket = {
+                type: 'rocket',
+                x: W / 2,
+                y: H - 10, // Start near the bottom
+                vx: Math.random() * 4 - 2, // Horizontal velocity ±2
+                vy: -10 - Math.random() * 5, // Vertical velocity -10 to -15
+                age: 0,
+                fuseTime: 1 + Math.random(), // 1-2 seconds fuse
+                color: 'white',
+                dead: false
+            };
+            particles.push(rocket);
+        }
+
+        // Explode a rocket into particles
+        function explodeRocket(rocket) {
+            const numParticles = 50 + Math.random() * 30; // 50-80 particles
+            for (let i = 0; i < numParticles; i++) {
+                const speed = 2 + Math.random() * 3; // Speed 2-5
+                const angle = Math.random() * 2 * Math.PI; // Random angle
+                const vx = speed * Math.cos(angle);
+                const vy = speed * Math.sin(angle);
+                const color = `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`;
+                const size = 2 + Math.random() * 2; // Size 2-4
+                const lifespan = 1 + Math.random() * 2; // 1-3 seconds
+                particles.push({
+                    type: 'explosion',
+                    x: rocket.x,
+                    y: rocket.y,
+                    vx,
+                    vy,
+                    lifespan,
+                    color,
+                    size,
+                    dead: false
+                });
+            }
+            rocket.dead = true;
+        }
+
+        // Main game loop
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastTimestamp) / 1000; // Convert to seconds
+            lastTimestamp = timestamp;
+
+            // Update particles
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                if (p.dead) continue;
+
+                if (p.type === 'rocket') {
+                    p.age += deltaTime;
+                    if (p.age >= p.fuseTime || p.y <= 0) { // Rocket explodes if fuse expires or reaches top
+                        explodeRocket(p);
+                        continue;
+                    }
+                    p.x += p.vx * deltaTime;
+                    p.y += p.vy * deltaTime;
+                    p.vy += gravity * deltaTime; // Apply gravity
+                } else if (p.type === 'explosion') {
+                    p.x += p.vx * deltaTime;
+                    p.y += p.vy * deltaTime;
+                    p.vy += gravity * deltaTime; // Gravity affects explosion particles too
+                    p.lifespan -= deltaTime;
+                    if (p.lifespan <= 0) p.dead = true;
+                }
+            }
+
+            // Remove dead particles
+            particles = particles.filter(p => !p.dead);
+
+            // Launch new rocket if time
+            if (timestamp >= nextLaunchTime) {
+                launchRocket();
+                nextLaunchTime = timestamp + 500 + Math.random() * 1500; // Next launch in 0.5-2 seconds
+            }
+
+            // Draw
+            ctx.clearRect(0, 0, W, H);
+            for (const p of particles) {
+                if (p.type === 'rocket') {
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    const alpha = p.lifespan / (1 + p.lifespan); // Fade out as lifespan decreases
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = alpha;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1; // Reset alpha
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This simulation demonstrates efficient particle management, autonomous rocket launching, gravity effects, and realistic particle explosions.
+    </section>
+</body>
+</html>

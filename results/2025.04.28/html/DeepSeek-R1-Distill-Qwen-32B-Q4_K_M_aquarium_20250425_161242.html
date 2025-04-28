@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color: rgb(207, 247, 255); }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        class Fish {
+            constructor() {
+                this.x = Math.random() * W;
+                this.y = Math.random() * H;
+                this.vx = (Math.random() - 0.5) * 2;
+                this.vy = (Math.random() - 0.5) * 2;
+                this.size = 20 + Math.random() * 20;
+                this.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+                this.direction = Math.random() * Math.PI * 2;
+                this.turning = (Math.random() - 0.5) * 0.02;
+            }
+
+            update(deltaTime) {
+                // Update position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+
+                // Update direction
+                this.direction += this.turning;
+                this.vx = Math.cos(this.direction) * 2;
+                this.vy = Math.sin(this.direction) * 2;
+
+                // Boundary checking
+                if (this.x < 0 || this.x > W) {
+                    this.vx *= -1;
+                    this.x = this.x < 0 ? 0 : W;
+                }
+                if (this.y < 0 || this.y > H) {
+                    this.vy *= -1;
+                    this.y = this.y < 0 ? 0 : H;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.direction);
+
+                ctx.beginPath();
+                ctx.fillStyle = this.color;
+                
+                // Fish body
+                ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+                
+                // Fish tail
+                ctx.moveTo(this.size * 0.7, 0);
+                ctx.lineTo(this.size * 1.2, this.size / 3);
+                ctx.lineTo(this.size * 1.2, -this.size / 3);
+                ctx.closePath();
+
+                ctx.fill();
+                ctx.strokeStyle = 'black';
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        const fish = [];
+        const maxFish = 20;
+
+        // Initialize fish
+        for (let i = 0; i < maxFish; i++) {
+            fish.push(new Fish());
+        }
+
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update and draw fish
+            fish.forEach(f => {
+                f.update(timestamp / 1000); // deltaTime in seconds
+                f.draw();
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the simulation
+        requestAnimationFrame(gameLoop);
+
+        // Add some notes about the implementation
+        document.getElementById('notes').innerHTML = `
+            <h3>Implementation Notes</h3>
+            <p>Created a Fish class that encapsulates all fish properties and behaviors:</p>
+            <ul>
+                <li>Random initialization of position, velocity, size, and color</li>
+                <li>Autonomous movement with direction changes</li>
+                <li>Boundary detection and reflection</li>
+                <li>Simple fish shape with orientation based on movement direction</li>
+            </ul>
+            <p>Uses requestAnimationFrame for smooth animation and deltaTime for consistent movement speeds.</p>
+        `;
+    </script>
+
+    <section id="notes">
+        <!-- Notes will be populated by JavaScript -->
+    </section>
+</body>
+</html>

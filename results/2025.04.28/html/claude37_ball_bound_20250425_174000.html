@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Physics constants
+        const GRAVITY = 0.25;
+        const DAMPING = 0.8;
+        const BALLS_COUNT = 50;
+        const GRID_SIZE = 40; // Size of each grid cell for spatial partitioning
+
+        // Ball class definition
+        class Ball {
+            constructor(x, y, radius) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 5; // Random velocity
+                this.vy = (Math.random() - 0.5) * 5;
+                this.radius = radius;
+                this.mass = radius * radius; // Mass proportional to area
+                this.color = this.getRandomColor();
+            }
+
+            // Generate a random color for the ball
+            getRandomColor() {
+                const hue = Math.floor(Math.random() * 360);
+                return `hsl(${hue}, 70%, 50%)`;
+            }
+
+            // Update ball position based on velocity
+            update() {
+                // Apply gravity
+                this.vy += GRAVITY;
+                
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                this.handleWallCollisions();
+            }
+
+            // Check and respond to wall collisions
+            handleWallCollisions() {
+                // Right wall
+                if (this.x + this.radius > W) {
+                    this.x = W - this.radius;
+                    this.vx = -this.vx * DAMPING;
+                }
+                // Left wall
+                else if (this.x - this.radius < 0) {
+                    this.x = this.radius;
+                    this.vx = -this.vx * DAMPING;
+                }
+                
+                // Bottom wall
+                if (this.y + this.radius > H) {
+                    this.y = H - this.radius;
+                    this.vy = -this.vy * DAMPING;
+                }
+                // Top wall
+                else if (this.y - this.radius < 0) {
+                    this.y = this.radius;
+                    this.vy = -this.vy * DAMPING;
+                }
+            }
+
+            // Draw the ball on the canvas
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        // Create balls with initial positions
+        const balls = [];
+        const gridCells = {}; // For spatial partitioning
+
+        // Initialize the balls with random positions
+        function initializeBalls() {
+            const minRadius = 10;
+            const maxRadius = 20;
+            
+            for (let i = 0; i < BALLS_COUNT; i++) {
+                let overlapping;
+                let newBall;
+                let attempts = 0;
+                
+                // Try to place balls without significant overlap
+                do {
+                    overlapping = false;
+                    const radius = minRadius + Math.random() * (maxRadius - minRadius);
+                    const x = radius + Math.random() * (W - 2 * radius);
+                    const y = radius + Math.random() * (H - 2 * radius);
+                    
+                    newBall = new Ball(x, y, radius);
+                    
+                    // Check for overlaps with existing balls
+                    for (const ball of balls) {
+                        const dx = newBall.x - ball.x;
+                        const dy = newBall.y - ball.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance < newBall.radius + ball.radius) {
+                            overlapping = true;
+                            break;
+                        }
+                    }
+                    
+                    attempts++;
+                    // After 10 attempts, just place the ball anyway to avoid infinite loop
+                    if (attempts > 10) {
+                        overlapping = false;
+                    }
+                } while (overlapping);
+                
+                balls.push(newBall);
+            }
+        }
+
+        // Get grid cell key for spatial partitioning
+        function getCellKey(x, y) {
+            const gridX = Math.floor(x / GRID_SIZE);
+            const gridY = Math.floor(y / GRID_SIZE);
+            return `${gridX},${gridY}`;
+        }
+
+        // Update the spatial partitioning grid
+        function updateGrid() {
+            // Clear the grid
+            for (const key in gridCells) {
+                delete gridCells[key];
+            }
+            
+            // Populate the grid with balls
+            for (let i = 0; i < balls.length; i++) {
+                const ball = balls[i];
+                
+                // Get cells that this ball could be in (considering its radius)
+                const minX = ball.x - ball.radius;
+                const maxX = ball.x + ball.radius;
+                const minY = ball.y - ball.radius;
+                const maxY = ball.y + ball.radius;
+                
+                const startCellX = Math.floor(minX / GRID_SIZE);
+                const endCellX = Math.floor(maxX / GRID_SIZE);
+                const startCellY = Math.floor(minY / GRID_SIZE);
+                const endCellY = Math.floor(maxY / GRID_SIZE);
+                
+                // Add the ball to all relevant grid cells
+                for (let x = startCellX; x <= endCellX; x++) {
+                    for (let y = startCellY; y <= endCellY; y++) {
+                        const key = `${x},${y}`;
+                        if (!gridCells[key]) {
+                            gridCells[key] = [];
+                        }
+                        gridCells[key].push(i); // Store ball index
+                    }
+                }
+            }
+        }
+
+        // Handle ball-to-ball collisions
+        function handleCollisions() {
+            updateGrid(); // Update spatial partitioning grid
+            
+            const checkedPairs = new Set(); // To avoid checking the same pair twice
+            
+            // Check each occupied cell in the grid
+            for (const key in gridCells) {
+                const indices = gridCells[key];
+                
+                // Check all pairs of balls in this cell
+                for (let i = 0; i < indices.length; i++) {
+                    for (let j = i + 1; j < indices.length; j++) {
+                        const idx1 = indices[i];
+                        const idx2 = indices[j];
+                        
+                        // Create a unique key for this pair
+                        const pairKey = idx1 < idx2 ? `${idx1}-${idx2}` : `${idx2}-${idx1}`;
+                        
+                        // Skip if we've already checked this pair
+                        if (checkedPairs.has(pairKey)) continue;
+                        checkedPairs.add(pairKey);
+                        
+                        const ball1 = balls[idx1];
+                        const ball2 = balls[idx2];
+                        
+                        // Calculate distance between balls
+                        const dx = ball2.x - ball1.x;
+                        const dy = ball2.y - ball1.y;
+                        const distanceSquared = dx * dx + dy * dy;
+                        const distance = Math.sqrt(distanceSquared);
+                        const minDistance = ball1.radius + ball2.radius;
+                        
+                        // Check for collision
+                        if (distance < minDistance) {
+                            // Calculate collision response
+                            const angle = Math.atan2(dy, dx);
+                            const sin = Math.sin(angle);
+                            const cos = Math.cos(angle);
+                            
+                            // Rotate ball positions and velocities
+                            const pos1 = {x: 0, y: 0}; // Origin
+                            const pos2 = {x: dx * cos + dy * sin, y: dy * cos - dx * sin};
+                            
+                            // Rotate velocities
+                            const vel1 = {
+                                x: ball1.vx * cos + ball1.vy * sin,
+                                y: ball1.vy * cos - ball1.vx * sin
+                            };
+                            const vel2 = {
+                                x: ball2.vx * cos + ball2.vy * sin,
+                                y: ball2.vy * cos - ball2.vx * sin
+                            };
+                            
+                            // Calculate new velocities (1D collision with conservation of momentum)
+                            const totalMass = ball1.mass + ball2.mass;
+                            
+                            const newVel1 = {
+                                x: (vel1.x * (ball1.mass - ball2.mass) + 2 * ball2.mass * vel2.x) / totalMass,
+                                y: vel1.y
+                            };
+                            
+                            const newVel2 = {
+                                x: (vel2.x * (ball2.mass - ball1.mass) + 2 * ball1.mass * vel1.x) / totalMass,
+                                y: vel2.y
+                            };
+                            
+                            // Apply damping
+                            newVel1.x *= DAMPING;
+                            newVel2.x *= DAMPING;
+                            
+                            // Rotate velocities back
+                            ball1.vx = newVel1.x * cos - newVel1.y * sin;
+                            ball1.vy = newVel1.y * cos + newVel1.x * sin;
+                            ball2.vx = newVel2.x * cos - newVel2.y * sin;
+                            ball2.vy = newVel2.y * cos + newVel2.x * sin;
+                            
+                            // Move balls apart to prevent sticking
+                            const overlap = minDistance - distance;
+                            const moveX = (overlap / 2) * cos;
+                            const moveY = (overlap / 2) * sin;
+                            
+                            ball1.x -= moveX;
+                            ball1.y -= moveY;
+                            ball2.x += moveX;
+                            ball2.y += moveY;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Main game loop
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+            
+            // Update all balls
+            for (const ball of balls) {
+                ball.update();
+            }
+            
+            // Handle collisions between balls
+            handleCollisions();
+            
+            // Draw all balls
+            for (const ball of balls) {
+                ball.draw();
+            }
+            
+            // Show ball count
+            ctx.fillStyle = "#000";
+            ctx.font = "16px Arial";
+            ctx.fillText(`Balls: ${BALLS_COUNT}`, 10, 20);
+            
+            // Continue the animation
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize and start the game
+        initializeBalls();
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        Notes on implementation:
+        
+        1. Physics Implementation:
+           - Gravity is applied to all balls each frame
+           - Wall collisions have damping to simulate energy loss
+           - Ball-to-ball collisions use conservation of momentum physics
+        
+        2. Optimization:
+           - Used spatial partitioning with a grid system to reduce collision checks
+           - Instead of checking all possible pairs (O(n²)), we only check balls in the same grid cells
+           - Each ball can occupy multiple grid cells if it spans cell boundaries
+           - Tracked already-checked pairs to avoid duplicate collision checks
+        
+        3. Collision Response:
+           - Used angle-based velocity calculation for realistic collisions
+           - Applied overlap correction to prevent balls from sticking together
+           - Used mass-based calculations (mass proportional to area) for realistic physics
+    </section>
+</body>
+</html>

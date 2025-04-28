@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f8ff; font-family: sans-serif; } /* Alice blue background */
+        canvas {
+            display: block;
+            margin: 20px auto;
+            border: 2px solid #4682b4; /* Steel blue border */
+            background-color: #add8e6; /* Light blue water */
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        #notes {
+            width: 800px;
+            margin: 10px auto;
+            padding: 15px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 0.9em;
+            color: #333;
+        }
+        h2 { margin-top: 0; color: #4682b4; }
+        ul { margin-top: 5px; }
+        li { margin-bottom: 5px; }
+        code { background-color: #eee; padding: 2px 4px; border-radius: 3px;}
+    </style>
+</head>
+<body>
+    <!-- Canvas element where the simulation will be drawn -->
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <!-- Optional section for notes -->
+    <section id="notes">
+        <h2>Autonomous Aquarium Simulation Notes</h2>
+        <ul>
+            <li><strong>Object-Oriented Design:</strong> Uses a `Fish` class to encapsulate state (position, velocity, size, color, angle) and behavior (update, draw, wander, avoid boundaries).</li>
+            <li><strong>Animation Loop:</strong> Employs `requestAnimationFrame` for smooth, efficient rendering.</li>
+            <li><strong>Delta Time:</strong> Calculates `deltaTime` in each frame to ensure physics and animation are frame-rate independent.</li>
+            <li><strong>Autonomous Behavior:</strong>
+                <ul>
+                    <li>Fish move continuously based on their velocity.</li>
+                    <li>A simple "wandering" behavior is implemented by slightly randomizing the fish's target direction over time.</li>
+                    <li>Boundary avoidance: Fish detect proximity to edges and smoothly turn towards the center of the canvas.</li>
+                </ul>
+            </li>
+            <li><strong>Visuals:</strong>
+                <ul>
+                    <li>Fish are drawn as simple shapes (ellipse body, triangle tail).</li>
+                    <li>Fish orientation matches their direction of movement.</li>
+                    <li>A subtle tail wiggle animation is added.</li>
+                    <li>Randomized colors, sizes, and speeds provide visual variety.</li>
+                </ul>
+            </li>
+             <li><strong>Efficiency:</strong> The implementation is designed to be reasonably efficient for the specified number of fish using plain JavaScript and Canvas API.</li>
+        </ul>
+    </section>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Simulation Parameters ---
+        const NUM_FISH = 15;
+        const fishes = [];
+        const BOUNDARY_MARGIN = 50; // How far from the edge fish start turning
+        const TURN_SPEED = 0.05;    // How quickly fish turn
+        const WANDER_STRENGTH = 0.1; // How much fish change direction randomly
+        const TAIL_WIGGLE_SPEED = 15; // Speed of tail animation
+        const TAIL_WIGGLE_AMOUNT = 0.1; // Amplitude of tail wiggle
+
+        let lastTime = 0; // For delta time calculation
+
+        // --- Helper Functions ---
+        function getRandom(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function getRandomColor() {
+            const hue = getRandom(0, 360);
+            const saturation = getRandom(70, 100);
+            const lightness = getRandom(50, 70);
+            return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        }
+
+        // Linear interpolation for smoother angle changes
+        function lerpAngle(a, b, t) {
+            const diff = b - a;
+            const delta = Math.atan2(Math.sin(diff), Math.cos(diff)); // Handle angle wrapping
+            return a + delta * t;
+        }
+
+        // --- Fish Class ---
+        class Fish {
+            constructor() {
+                this.x = getRandom(BOUNDARY_MARGIN, W - BOUNDARY_MARGIN);
+                this.y = getRandom(BOUNDARY_MARGIN, H - BOUNDARY_MARGIN);
+                this.size = getRandom(15, 30); // Base size (body length)
+                this.speed = getRandom(40, 80); // Pixels per second
+                this.angle = getRandom(0, Math.PI * 2); // Initial direction in radians
+                this.vx = Math.cos(this.angle) * this.speed;
+                this.vy = Math.sin(this.angle) * this.speed;
+                this.color = getRandomColor();
+                this.wanderAngle = this.angle; // Target angle for wandering
+                this.tailAngle = 0; // For tail animation
+            }
+
+            update(deltaTime) {
+                // 1. Wandering Behavior
+                // Slightly change the target wander angle over time
+                this.wanderAngle += (Math.random() - 0.5) * WANDER_STRENGTH * deltaTime * 10; // Multiply dt for noticeable change
+
+                // 2. Boundary Avoidance
+                let targetAngle = this.wanderAngle; // Default target is the wander direction
+                let turning = false;
+
+                if (this.x < BOUNDARY_MARGIN) {
+                    targetAngle = Math.atan2(H / 2 - this.y, W / 2 - this.x); // Aim towards center
+                    turning = true;
+                } else if (this.x > W - BOUNDARY_MARGIN) {
+                    targetAngle = Math.atan2(H / 2 - this.y, W / 2 - this.x);
+                    turning = true;
+                }
+                if (this.y < BOUNDARY_MARGIN) {
+                    targetAngle = Math.atan2(H / 2 - this.y, W / 2 - this.x);
+                    turning = true;
+                } else if (this.y > H - BOUNDARY_MARGIN) {
+                    targetAngle = Math.atan2(H / 2 - this.y, W / 2 - this.x);
+                    turning = true;
+                }
+
+                // Smoothly interpolate towards the target angle (either wander or boundary avoidance)
+                const turnRate = turning ? TURN_SPEED * 2 : TURN_SPEED; // Turn faster when avoiding boundaries
+                this.angle = lerpAngle(this.angle, targetAngle, turnRate * deltaTime * 5); // Multiply dt for responsiveness
+
+                // 3. Update Velocity based on new angle
+                this.vx = Math.cos(this.angle) * this.speed;
+                this.vy = Math.sin(this.angle) * this.speed;
+
+                // 4. Update Position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+
+                // 5. Clamp Position (Safety Net - should ideally not be needed with smooth turning)
+                this.x = Math.max(this.size / 2, Math.min(W - this.size / 2, this.x));
+                this.y = Math.max(this.size / 2, Math.min(H - this.size / 2, this.y));
+
+                // 6. Update Tail Wiggle
+                this.tailAngle = Math.sin(Date.now() * 0.001 * TAIL_WIGGLE_SPEED) * TAIL_WIGGLE_AMOUNT;
+            }
+
+            draw(ctx) {
+                ctx.save(); // Save current state (transformations, colors)
+
+                // Translate and rotate canvas to draw the fish at its position and angle
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Fish Body (Ellipse)
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size / 2, this.size / 4, 0, 0, Math.PI * 2); // Body shape
+                ctx.fill();
+
+                // Fish Tail (Triangle) - wiggles
+                ctx.save(); // Save state before tail rotation
+                ctx.rotate(this.tailAngle); // Apply tail wiggle rotation
+                ctx.beginPath();
+                ctx.moveTo(-this.size / 2.5, 0); // Point attached to body
+                ctx.lineTo(-this.size / 1.5, -this.size / 5); // Top tail point
+                ctx.lineTo(-this.size / 1.5, this.size / 5); // Bottom tail point
+                ctx.closePath();
+                ctx.fillStyle = this.color; // Could use a slightly different shade
+                ctx.fill();
+                ctx.restore(); // Restore state after tail rotation
+
+                // Optional Eye
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(this.size / 4, -this.size / 12, this.size / 15, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(this.size / 3.8, -this.size / 12, this.size / 25, 0, Math.PI * 2);
+                ctx.fill();
+
+
+                ctx.restore(); // Restore original canvas state
+            }
+        }
+
+        // --- Initialization ---
+        function init() {
+            fishes.length = 0; // Clear existing fish if re-initializing
+            for (let i = 0; i < NUM_FISH; i++) {
+                fishes.push(new Fish());
+            }
+            console.log(`Initialized ${fishes.length} fish.`);
+        }
+
+        // --- Main Simulation Loop ---
+        function gameLoop(timestamp) {
+            // Calculate delta time (time elapsed since the last frame in seconds)
+            const deltaTime = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Guard against large deltaTime spikes (e.g., tab becoming inactive)
+            const maxDeltaTime = 0.1; // Limit to 100ms
+             const dt = Math.min(deltaTime, maxDeltaTime);
+
+            // --- Clear Canvas ---
+            // Clear with the background water color
+            ctx.fillStyle = '#add8e6'; // Light blue water
+            ctx.fillRect(0, 0, W, H);
+
+            // --- Update Logic ---
+            fishes.forEach(fish => fish.update(dt));
+
+            // --- Draw Logic ---
+            fishes.forEach(fish => fish.draw(ctx));
+
+            // --- Request Next Frame ---
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Start the Simulation ---
+        init(); // Create the fish
+        // Start the animation loop - pass the initial timestamp
+        requestAnimationFrame((initialTimestamp) => {
+            lastTime = initialTimestamp; // Set initial lastTime
+            requestAnimationFrame(gameLoop);
+        });
+
+    </script>
+
+</body>
+</html>

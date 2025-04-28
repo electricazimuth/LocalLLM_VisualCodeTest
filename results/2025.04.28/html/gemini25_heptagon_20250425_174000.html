@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls in Spinning Heptagon</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; font-family: sans-serif; }
+        canvas { border: 1px solid black; background-color: #e0e0ff; display: block; margin: 20px auto; }
+        #notes { padding: 20px; max-width: 800px; margin: 0 auto; background-color: #eee; border-radius: 5px; }
+        #notes h2 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="700"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Simulation Constants ---
+        const GRAVITY = 0.2;          // Acceleration due to gravity (pixels/frame^2)
+        const DAMPING = 0.85;         // Energy loss factor on wall bounce (0 to 1)
+        const BALL_BALL_DAMPING = 0.98; // Energy loss factor on ball-ball bounce
+        const FRICTION = 0.99;        // General velocity damping factor (air resistance)
+        const ANGULAR_DAMPING = 0.98; // Damping factor for ball rotation
+        const ROTATION_FRICTION = 0.03; // Factor determining how much collision affects spin
+        const MIN_VELOCITY_SQ = 0.01 * 0.01; // Squared minimum speed to prevent jittering
+        const PHYSICS_SUBSTEPS = 5;   // Number of physics steps per frame for stability
+
+        const NUM_BALLS = 20;
+        const BALL_RADIUS = 15;
+        const COLORS = [
+            '#f8b862', '#f6ad49', '#f39800', '#f08300', '#ec6d51',
+            '#ee7948', '#ed6d3d', '#ec6800', '#ec6800', '#ee7800',
+            '#eb6238', '#ea5506', '#ea5506', '#eb6101', '#e49e61',
+            '#e45e32', '#e17b34', '#dd7a56', '#db8449', '#d66a35'
+        ];
+
+        const HEPTAGON_SIDES = 7;
+        const HEPTAGON_CENTER_X = W / 2;
+        const HEPTAGON_CENTER_Y = H / 2;
+        // Make radius large enough, considering ball radius and some buffer
+        const HEPTAGON_RADIUS = Math.min(W, H) * 0.45 - BALL_RADIUS;
+        const HEPTAGON_ROTATION_SPEED_RAD_PER_SEC = (2 * Math.PI) / 5.0; // 360 degrees in 5 seconds
+
+        // --- Global Variables ---
+        let balls = [];
+        let heptagonAngle = 0;
+        let lastTime = 0;
+        let isDragging = false;
+        let draggedBall = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+
+        // --- Vector Math Helpers ---
+        function distSq(p1, p2) {
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            return dx * dx + dy * dy;
+        }
+
+        function pointSegmentDistanceSquared(p, a, b) {
+            const l2 = distSq(a, b);
+            if (l2 === 0) return { distSq: distSq(p, a), closest: { x: a.x, y: a.y }, t: 0 };
+            let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2;
+            t = Math.max(0, Math.min(1, t)); // Clamp t to [0, 1]
+            const closestPoint = {
+                x: a.x + t * (b.x - a.x),
+                y: a.y + t * (b.y - a.y)
+            };
+            return { distSq: distSq(p, closestPoint), closest: closestPoint, t: t };
+        }
+
+        // --- Ball Class ---
+        class Ball {
+            constructor(id, x, y, radius, color) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.color = color;
+                this.vx = (Math.random() - 0.5) * 1; // Small initial velocity
+                this.vy = (Math.random() - 0.5) * 1;
+                this.mass = Math.PI * radius * radius; // Mass proportional to area
+                this.invMass = 1 / this.mass; // Inverse mass for calculations
+                this.angle = Math.random() * Math.PI * 2; // Initial random rotation
+                this.angularVelocity = (Math.random() - 0.5) * 0.1; // Initial random spin
+                this.inertia = 0.5 * this.mass * this.radius * this.radius; // Moment of inertia for a solid sphere (or disk)
+                this.invInertia = 1 / this.inertia;
+            }
+
+            applyForce(fx, fy) {
+                // Acceleration = Force / Mass -> Change in Velocity = Acceleration * dt
+                // We apply velocity changes directly per substep later
+            }
+
+            updatePosition(dt) {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.angle += this.angularVelocity * dt;
+            }
+
+            applyGravity(dt) {
+                 this.vy += GRAVITY * dt;
+            }
+
+             applyDamping(dt) {
+                this.vx *= Math.pow(FRICTION, dt); // Apply damping over time
+                this.vy *= Math.pow(FRICTION, dt);
+                this.angularVelocity *= Math.pow(ANGULAR_DAMPING, dt);
+
+                // Stop movement if velocity is very low to prevent jittering
+                if (this.vx * this.vx + this.vy * this.vy < MIN_VELOCITY_SQ) {
+                    this.vx = 0;
+                    this.vy = 0;
+                }
+                if (this.angularVelocity * this.angularVelocity < MIN_VELOCITY_SQ / (this.radius * this.radius)) {
+                    this.angularVelocity = 0;
+                }
+            }
+
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Draw ball body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(0,0,0,0.5)'; // Slight outline
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+
+                // Draw number (rotated with the ball)
+                ctx.fillStyle = "black";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.font = `bold ${Math.max(10, this.radius * 0.8)}px Arial`;
+                ctx.fillText(this.id, 0, 1); // Slight offset for better centering
+
+                // Draw a reference line to better visualize rotation
+                ctx.strokeStyle = "black";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(this.radius * 0.7, 0); // Line points along the internal 0-degree angle
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        // --- Heptagon Functions ---
+        function getHeptagonVertices(cx, cy, radius, angle, sides) {
+            const vertices = [];
+            for (let i = 0; i < sides; i++) {
+                const currentAngle = angle + (i * 2 * Math.PI) / sides;
+                vertices.push({
+                    x: cx + radius * Math.cos(currentAngle),
+                    y: cy + radius * Math.sin(currentAngle)
+                });
+            }
+            return vertices;
+        }
+
+        function drawHeptagon(ctx, vertices) {
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 4; // Make walls thicker
+            ctx.beginPath();
+            ctx.moveTo(vertices[0].x, vertices[0].y);
+            for (let i = 1; i < vertices.length; i++) {
+                ctx.lineTo(vertices[i].x, vertices[i].y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+        }
+
+        // --- Collision Detection & Response ---
+
+        function collideBallHeptagon(ball, vertices, dt) {
+            const n = vertices.length;
+            const currentHeptagonRotationSpeed = HEPTAGON_ROTATION_SPEED_RAD_PER_SEC; // Constant speed
+
+            for (let i = 0; i < n; i++) {
+                const p1 = vertices[i];
+                const p2 = vertices[(i + 1) % n]; // Next vertex, wrapping around
+
+                const { distSq: dSq, closest: closestPoint, t } = pointSegmentDistanceSquared({ x: ball.x, y: ball.y }, p1, p2);
+
+                if (dSq < ball.radius * ball.radius) {
+                    const dist = Math.sqrt(dSq);
+                    const overlap = ball.radius - dist;
+
+                    // Calculate normal (from closest point on segment towards ball center)
+                    let normalX = ball.x - closestPoint.x;
+                    let normalY = ball.y - closestPoint.y;
+                    const normalMagSq = normalX * normalX + normalY * normalY;
+
+                    if (normalMagSq < 1e-9) { // Ball center is very close to the wall line/vertex
+                        // Use the segment's perpendicular normal (pointing outwards)
+                        const segDX = p2.x - p1.x;
+                        const segDY = p2.y - p1.y;
+                        const segLen = Math.sqrt(segDX * segDX + segDY * segDY);
+                         if (segLen > 1e-6) {
+                             normalX = -segDY / segLen; // Perpendicular vector
+                             normalY = segDX / segLen;
+
+                            // Ensure it points outwards from heptagon center
+                            const midX = (p1.x + p2.x) / 2;
+                            const midY = (p1.y + p2.y) / 2;
+                            const centerToMidX = midX - HEPTAGON_CENTER_X;
+                            const centerToMidY = midY - HEPTAGON_CENTER_Y;
+                            if (normalX * centerToMidX + normalY * centerToMidY < 0) {
+                                normalX *= -1;
+                                normalY *= -1;
+                            }
+                        } else { // Segment is a point (shouldn't happen with heptagon)
+                             // Fallback: normal points from center to ball
+                             normalX = ball.x - HEPTAGON_CENTER_X;
+                             normalY = ball.y - HEPTAGON_CENTER_Y;
+                             const fallbackMag = Math.sqrt(normalX*normalX + normalY*normalY);
+                              if (fallbackMag > 1e-6) {
+                                  normalX /= fallbackMag;
+                                  normalY /= fallbackMag;
+                              } else { normalX = 1; normalY = 0; } // Absolute fallback
+                        }
+
+                    } else {
+                         const invNormalMag = 1.0 / Math.sqrt(normalMagSq);
+                         normalX *= invNormalMag;
+                         normalY *= invNormalMag;
+                    }
+
+
+                    // --- Positional Correction ---
+                    // Push ball out along the normal by the overlap distance
+                    // Avoid pushing into other walls - this is tricky. Simple push first.
+                    ball.x += normalX * overlap;
+                    ball.y += normalY * overlap;
+
+                    // --- Collision Response ---
+                    // 1. Calculate relative velocity between ball and wall at contact point
+                    const contactRadiusX = closestPoint.x - ball.x; // Vector from ball center to contact
+                    const contactRadiusY = closestPoint.y - ball.y;
+
+                    // Velocity of the ball surface point due to ball's linear and angular velocity
+                    const ballPointVx = ball.vx - ball.angularVelocity * contactRadiusY;
+                    const ballPointVy = ball.vy + ball.angularVelocity * contactRadiusX;
+
+                    // Velocity of the wall point due to heptagon rotation
+                    const wallRadiusX = closestPoint.x - HEPTAGON_CENTER_X; // Vector from heptagon center to contact
+                    const wallRadiusY = closestPoint.y - HEPTAGON_CENTER_Y;
+                    const wallPointVx = -currentHeptagonRotationSpeed * wallRadiusY;
+                    const wallPointVy = currentHeptagonRotationSpeed * wallRadiusX;
+
+                    const relativeVx = ballPointVx - wallPointVx;
+                    const relativeVy = ballPointVy - wallPointVy;
+
+                    const relativeVelDotNormal = relativeVx * normalX + relativeVy * normalY;
+
+                    // Only apply impulse if objects are moving towards each other or wall "catches up"
+                    if (relativeVelDotNormal < 0) {
+                        // Calculate impulse magnitude using restitution (damping)
+                        const restitution = DAMPING; // Use wall damping factor
+
+                        // Simplified impulse calculation (treating wall as infinitely massive)
+                        // Impulse J = -(1 + e) * (Vrel . N) / (1/m1 + (R1 x N)^2 / I1)
+                        // where R1 is vector from CM to contact point
+                        const rn = contactRadiusX * normalX + contactRadiusY * normalY; // R . N (is zero for center)
+                        const crossNormalSq = (contactRadiusX * normalY - contactRadiusY * normalX)**2; // (R x N)^2 magnitude
+
+                        // Simplified: impulse only changes linear velocity along normal first
+                         let jN = -(1 + restitution) * relativeVelDotNormal;
+                         jN /= ball.invMass; // Simplified - ignores rotational inertia effect on bounce for now
+
+
+                        // Apply impulse along the normal
+                        const impulseX = jN * normalX;
+                        const impulseY = jN * normalY;
+
+                        ball.vx += impulseX * ball.invMass;
+                        ball.vy += impulseY * ball.invMass;
+                        // Angular impulse would be: J * (R x N) / I, but R x N is tricky here
+                        // Let's add friction separately
+
+                        // --- Rotational Friction ---
+                        // Tangent vector
+                        const tangentX = -normalY;
+                        const tangentY = normalX;
+
+                        // Relative velocity projected onto tangent
+                        const relativeVt = relativeVx * tangentX + relativeVy * tangentY;
+
+                        // Calculate frictional impulse magnitude (simplified Coulomb friction model)
+                        // Max friction impulse = coefficient_friction * normal_impulse_magnitude
+                         const frictionImpulseMag = Math.abs(relativeVt * ball.mass * ROTATION_FRICTION); // Simplified!
+                         //const frictionImpulseMag = Math.min(Math.abs(relativeVt) * ball.mass * 0.1, Math.abs(jN) * 0.2); // More physical attempt
+
+
+                        // Apply friction impulse opposite to relative tangential velocity
+                        const frictionImpulseX = -Math.sign(relativeVt) * frictionImpulseMag * tangentX;
+                        const frictionImpulseY = -Math.sign(relativeVt) * frictionImpulseMag * tangentY;
+
+                        // Apply linear friction impulse
+                        ball.vx += frictionImpulseX * ball.invMass;
+                        ball.vy += frictionImpulseY * ball.invMass;
+
+                        // Apply angular friction impulse (Torque = R x F_friction -> change in angular vel)
+                         const torque = contactRadiusX * frictionImpulseY - contactRadiusY * frictionImpulseX;
+                         ball.angularVelocity += torque * ball.invInertia;
+
+                    }
+                    // Note: A ball might collide with multiple segments in one step, especially near corners.
+                    // This simple handling might cause issues. Might need to resolve only the deepest collision.
+                    // For now, let it process all detected overlaps in a substep.
+                }
+            }
+             // Fallback: Ensure ball stays roughly within the heptagon radius bounds
+             const centerDistSq = distSq({x: ball.x, y: ball.y}, {x: HEPTAGON_CENTER_X, y: HEPTAGON_CENTER_Y});
+             const maxDist = HEPTAGON_RADIUS + ball.radius * 1.5; // Allow slight overshoot
+             if (centerDistSq > maxDist * maxDist) {
+                const centerDist = Math.sqrt(centerDistSq);
+                const pushFactor = (HEPTAGON_RADIUS - ball.radius) / centerDist; // Push back inside core radius
+                ball.x = HEPTAGON_CENTER_X + (ball.x - HEPTAGON_CENTER_X) * pushFactor;
+                ball.y = HEPTAGON_CENTER_Y + (ball.y - HEPTAGON_CENTER_Y) * pushFactor;
+                // Dampen velocity significantly if forced back
+                ball.vx *= 0.1;
+                ball.vy *= 0.1;
+             }
+        }
+
+
+        function collideBalls(ball1, ball2, dt) {
+            const dx = ball2.x - ball1.x;
+            const dy = ball2.y - ball1.y;
+            const distSquared = dx * dx + dy * dy;
+            const sumRadii = ball1.radius + ball2.radius;
+            const sumRadiiSq = sumRadii * sumRadii;
+
+            if (distSquared < sumRadiiSq && distSquared > 1e-9) { // Check collision and avoid division by zero / self-collision
+                const dist = Math.sqrt(distSquared);
+                const overlap = sumRadii - dist;
+
+                // Normal vector (from ball1 to ball2, normalized)
+                const nx = dx / dist;
+                const ny = dy / dist;
+
+                // --- Positional Correction ---
+                // Move balls apart along the normal based on their inverse masses
+                const totalInvMass = ball1.invMass + ball2.invMass;
+                const correctionFactor = overlap / totalInvMass;
+                ball1.x -= nx * correctionFactor * ball1.invMass;
+                ball1.y -= ny * correctionFactor * ball1.invMass;
+                ball2.x += nx * correctionFactor * ball2.invMass;
+                ball2.y += ny * correctionFactor * ball2.invMass;
+
+
+                // --- Collision Response ---
+                // 1. Calculate relative velocity at the contact point
+                // Contact points relative to centers: r1 = n * R1, r2 = -n * R2
+                const r1x = nx * ball1.radius; const r1y = ny * ball1.radius;
+                const r2x = -nx * ball2.radius; const r2y = -ny * ball2.radius;
+
+                // Velocity of contact point on ball 1
+                const cp1Vx = ball1.vx - ball1.angularVelocity * r1y;
+                const cp1Vy = ball1.vy + ball1.angularVelocity * r1x;
+                 // Velocity of contact point on ball 2
+                const cp2Vx = ball2.vx - ball2.angularVelocity * r2y;
+                const cp2Vy = ball2.vy + ball2.angularVelocity * r2x;
+
+                const relativeVx = cp1Vx - cp2Vx;
+                const relativeVy = cp1Vy - cp2Vy;
+
+                const relativeVelDotNormal = relativeVx * nx + relativeVy * ny;
+
+                // Only apply impulse if balls are moving towards each other
+                if (relativeVelDotNormal < 0) {
+                    const restitution = BALL_BALL_DAMPING;
+
+                    // Calculate terms needed for impulse calculation involving rotation
+                    const r1CrossN = r1x * ny - r1y * nx; // R1 x N (magnitude)
+                    const r2CrossN = r2x * ny - r2y * nx; // R2 x N (magnitude)
+
+                    const effectiveMassNormal = 1 / (ball1.invMass + ball2.invMass +
+                                                   (r1CrossN * r1CrossN) * ball1.invInertia +
+                                                   (r2CrossN * r2CrossN) * ball2.invInertia);
+
+                    // Normal Impulse magnitude
+                    let jN = -(1 + restitution) * relativeVelDotNormal * effectiveMassNormal;
+
+
+                    // Apply normal impulse
+                    const impulseNx = jN * nx;
+                    const impulseNy = jN * ny;
+
+                    ball1.vx += impulseNx * ball1.invMass;
+                    ball1.vy += impulseNy * ball1.invMass;
+                    ball1.angularVelocity += (r1x * impulseNy - r1y * impulseNx) * ball1.invInertia; // Torque = r x J
+
+                    ball2.vx -= impulseNx * ball2.invMass;
+                    ball2.vy -= impulseNy * ball2.invMass;
+                    ball2.angularVelocity -= (r2x * impulseNy - r2y * impulseNx) * ball2.invInertia;
+
+
+                     // --- Friction (Tangent Impulse) ---
+                    const tangentX = -ny;
+                    const tangentY = nx;
+                    const relativeVt = relativeVx * tangentX + relativeVy * tangentY; // Relative velocity along tangent
+
+                    const r1CrossT = r1x * ty - r1y * tx;
+                    const r2CrossT = r2x * ty - r2y * tx;
+
+                    const effectiveMassTangent = 1 / (ball1.invMass + ball2.invMass +
+                                                     (r1CrossT * r1CrossT) * ball1.invInertia +
+                                                     (r2CrossT * r2CrossT) * ball2.invInertia);
+
+
+                    let jT = -relativeVt * effectiveMassTangent; // Tangential impulse magnitude needed to stop relative tangential motion
+
+
+                    // Apply Coulomb friction model (tangential impulse cannot exceed friction_coeff * normal_impulse)
+                    const frictionCoeff = ROTATION_FRICTION * 5; // Ball-ball friction coeff
+                    const maxFrictionImpulse = Math.abs(jN * frictionCoeff);
+                    jT = Math.max(-maxFrictionImpulse, Math.min(jT, maxFrictionImpulse));
+
+
+                     // Apply tangential impulse
+                    const impulseTx = jT * tangentX;
+                    const impulseTy = jT * tangentY;
+
+                    ball1.vx += impulseTx * ball1.invMass;
+                    ball1.vy += impulseTy * ball1.invMass;
+                    ball1.angularVelocity += (r1x * impulseTy - r1y * impulseTx) * ball1.invInertia;
+
+                    ball2.vx -= impulseTx * ball2.invMass;
+                    ball2.vy -= impulseTy * ball2.invMass;
+                    ball2.angularVelocity -= (r2x * impulseTy - r2y * impulseTx) * ball2.invInertia;
+
+                }
+            }
+        }
+
+        // --- Initialization ---
+        function init() {
+            balls = [];
+            for (let i = 0; i < NUM_BALLS; i++) {
+                // Start slightly offset from center to prevent perfect stacking initially
+                const angle = Math.random() * Math.PI * 2;
+                const offset = Math.random() * BALL_RADIUS * 0.1;
+                balls.push(new Ball(
+                    i + 1,
+                    HEPTAGON_CENTER_X + Math.cos(angle) * offset,
+                    HEPTAGON_CENTER_Y + Math.sin(angle) * offset,
+                    BALL_RADIUS,
+                    COLORS[i % COLORS.length]
+                ));
+            }
+            lastTime = 0; // Reset time for dt calculation
+            heptagonAngle = 0; // Reset heptagon start angle
+        }
+
+        // --- Main Game Loop ---
+        function gameLoop(timestamp) {
+            const currentTime = timestamp || 0;
+            let dt = (currentTime - lastTime) / 1000.0; // Delta time in seconds
+
+            if (lastTime === 0) { // First frame adjustment
+                dt = 1 / 60.0; // Assume 60 FPS for the first frame calculation
+            }
+            // Clamp delta time to prevent instability with large gaps (e.g., tabbed out)
+            dt = Math.min(dt, 1 / 30.0);
+
+            lastTime = currentTime;
+
+            // --- Update Logic ---
+            heptagonAngle += HEPTAGON_ROTATION_SPEED_RAD_PER_SEC * dt;
+
+            const currentHeptagonVertices = getHeptagonVertices(
+                HEPTAGON_CENTER_X, HEPTAGON_CENTER_Y, HEPTAGON_RADIUS, heptagonAngle, HEPTAGON_SIDES
+            );
+
+            // --- Physics Sub-stepping ---
+            const sub_dt = dt / PHYSICS_SUBSTEPS;
+            for (let step = 0; step < PHYSICS_SUBSTEPS; step++) {
+
+                // Apply forces (gravity) and damping
+                balls.forEach(ball => {
+                    if (ball !== draggedBall) { // Don't apply physics to dragged ball
+                       ball.applyGravity(sub_dt);
+                       ball.applyDamping(sub_dt); // Apply friction/air resistance
+                    } else {
+                        // Set velocity of dragged ball to match mouse movement (approx)
+                        // This should ideally be done more smoothly based on mouse delta between frames
+                        // For now, just zero out velocity to prevent fighting the drag
+                         ball.vx = 0;
+                         ball.vy = 0;
+                         ball.angularVelocity = 0;
+                    }
+                });
+
+                 // Update positions based on velocity
+                balls.forEach(ball => {
+                     if (ball !== draggedBall) {
+                       ball.updatePosition(sub_dt);
+                     }
+                });
+
+
+                // Handle collisions
+                // Heptagon collisions
+                balls.forEach(ball => {
+                     if (ball !== draggedBall) {
+                        collideBallHeptagon(ball, currentHeptagonVertices, sub_dt);
+                     }
+                });
+
+                // Ball-ball collisions (O(n^2) check)
+                for (let i = 0; i < balls.length; i++) {
+                    // Don't check collisions involving the dragged ball
+                     if (balls[i] === draggedBall) continue;
+
+                    for (let j = i + 1; j < balls.length; j++) {
+                         if (balls[j] === draggedBall) continue;
+
+                        collideBalls(balls[i], balls[j], sub_dt);
+                    }
+                }
+            } // End of physics sub-steps
+
+
+            // --- Draw Logic ---
+            ctx.clearRect(0, 0, W, H); // Clear canvas
+
+            drawHeptagon(ctx, currentHeptagonVertices); // Draw the container
+
+            balls.forEach(ball => ball.draw(ctx)); // Draw the balls
+
+            // Request the next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+
+        // --- Mouse Interaction for Dragging ---
+        function getMousePos(canvas, evt) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: evt.clientX - rect.left,
+                y: evt.clientY - rect.top
+            };
+        }
+
+        canvas.addEventListener('mousedown', (evt) => {
+            const mousePos = getMousePos(canvas, evt);
+            for (let i = balls.length - 1; i >= 0; i--) { // Iterate backwards to pick top ball
+                const ball = balls[i];
+                const dx = mousePos.x - ball.x;
+                const dy = mousePos.y - ball.y;
+                if (dx * dx + dy * dy < ball.radius * ball.radius) {
+                    draggedBall = ball;
+                    dragOffsetX = dx;
+                    dragOffsetY = dy;
+                    isDragging = true;
+                    // Make dragged ball slightly larger visually maybe?
+                    // draggedBall.originalRadius = draggedBall.radius;
+                    // draggedBall.radius *= 1.1;
+                    break;
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', (evt) => {
+            if (isDragging && draggedBall) {
+                const mousePos = getMousePos(canvas, evt);
+                draggedBall.x = mousePos.x - dragOffsetX;
+                draggedBall.y = mousePos.y - dragOffsetY;
+                 // Keep ball within canvas bounds during drag (optional)
+                draggedBall.x = Math.max(draggedBall.radius, Math.min(W - draggedBall.radius, draggedBall.x));
+                draggedBall.y = Math.max(draggedBall.radius, Math.min(H - draggedBall.radius, draggedBall.y));
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            if (isDragging && draggedBall) {
+                // Restore original size if changed
+                // draggedBall.radius = draggedBall.originalRadius;
+                // Give the ball velocity based on last mouse movement (optional, complex)
+                // For now, just release it with zero velocity (set in update loop)
+                draggedBall = null;
+                isDragging = false;
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => { // Stop dragging if mouse leaves canvas
+            if (isDragging && draggedBall) {
+                // Restore original size if changed
+                // draggedBall.radius = draggedBall.originalRadius;
+                draggedBall = null;
+                isDragging = false;
+            }
+        });
+
+
+        // --- Start the simulation ---
+        init(); // Initialize balls
+        requestAnimationFrame(gameLoop); // Start the animation loop
+
+    </script>
+    <section id="notes">
+        <h2>Simulation Notes</h2>
+        <ul>
+            <li><strong>Container:</strong> A heptagon (7-sided polygon) spins counter-clockwise at a rate of 360 degrees every 5 seconds.</li>
+            <li><strong>Balls:</strong> 20 balls with unique numbers (1-20) and assigned colors. They start near the center.</li>
+            <li><strong>Physics:</strong>
+                <ul>
+                    <li>Gravity pulls balls downwards.</li>
+                    <li>Balls bounce off the rotating heptagon walls with energy loss (damping).</li>
+                    <li>Balls collide with each other, conserving momentum (approximately) and losing some energy.</li>
+                    <li>Collisions (both wall and ball-ball) induce rotation based on friction at the contact point.</li>
+                    <li>Basic air resistance/friction (velocity damping) and angular damping are applied each frame.</li>
+                    <li>Physics calculations are performed in multiple sub-steps per frame for better stability, especially with rotation and fast movement.</li>
+                </ul>
+            </li>
+             <li><strong>Interaction:</strong> You can click and drag the balls with the mouse.</li>
+            <li><strong>Implementation:</strong> Uses HTML Canvas API and vanilla JavaScript. No external physics libraries. Collision detection and response algorithms are custom implemented.</li>
+            <li><strong>Limitations/Simplifications:</strong>
+                <ul>
+                    <li>The collision response, especially involving friction and rotation, is complex and uses simplified models (e.g., impulse calculations). Perfect physical accuracy is difficult without a dedicated engine.</li>
+                    <li>Positional correction after collisions is simple (pushing out along normal) and might not perfectly resolve complex multi-object overlaps in a single step, relying on sub-stepping.</li>
+                     <li>Ball-wall friction model is simplified, aiming for plausible spin rather than exact physics.</li>
+                </ul>
+            </li>
+        </ul>
+    </section>
+</body>
+</html>

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; } /* Light blue background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color:rgb(207, 247, 255); } /* blue water */
+        .container { max-width: 800px; margin: 0 auto; text-align: center; }
+        h1 { color: #0277bd; font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Aquarium Simulation</h1>
+        <canvas id="simulationCanvas" width="800" height="600"></canvas>
+    </div>
+
+    <script>
+        // Setup canvas and context
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        
+        // Track time for frame-independent animation
+        let lastTime = 0;
+        
+        // Fish collection
+        const fishes = [];
+        
+        // Configuration
+        const NUM_FISH = 15;
+        const TURN_CHANCE = 0.02; // Probability to change direction each frame
+        const BOUNDARY_MARGIN = 50; // Distance from edge to start turning
+        
+        // Colors for fish
+        const FISH_COLORS = [
+            '#FF6D00', // Orange
+            '#FFAB00', // Amber
+            '#FFD600', // Yellow
+            '#1E88E5', // Blue
+            '#00ACC1', // Cyan
+            '#43A047', // Green
+            '#EC407A', // Pink
+            '#AB47BC', // Purple
+            '#5C6BC0', // Indigo
+            '#26A69A', // Teal
+        ];
+        
+        // Random helpers
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+        
+        function randomInt(min, max) {
+            return Math.floor(random(min, max));
+        }
+        
+        function randomColor() {
+            return FISH_COLORS[randomInt(0, FISH_COLORS.length)];
+        }
+        
+        // Fish class
+        class Fish {
+            constructor() {
+                // Position
+                this.x = random(W * 0.2, W * 0.8);
+                this.y = random(H * 0.2, H * 0.8);
+                
+                // Size
+                this.size = random(20, 40);
+                
+                // Speed
+                this.speed = random(30, 70);
+                
+                // Direction (in radians)
+                this.direction = random(0, Math.PI * 2);
+                
+                // Appearance
+                this.color = randomColor();
+                this.secondaryColor = randomColor();
+                
+                // Animation
+                this.tailWiggle = 0;
+                this.tailWiggleSpeed = random(5, 15);
+                this.tailAmplitude = random(0.3, 0.5);
+                
+                // For smooth turning
+                this.targetDirection = this.direction;
+                this.turnSpeed = random(1, 3);
+            }
+            
+            update(deltaTime) {
+                // Update position based on direction and speed
+                const moveDistance = this.speed * deltaTime;
+                this.x += Math.cos(this.direction) * moveDistance;
+                this.y += Math.sin(this.direction) * moveDistance;
+                
+                // Random direction changes
+                if (Math.random() < TURN_CHANCE) {
+                    this.targetDirection = random(0, Math.PI * 2);
+                }
+                
+                // Boundary checking and avoid walls
+                this.handleBoundaries();
+                
+                // Smooth direction change towards target direction
+                this.smoothTurn(deltaTime);
+                
+                // Animate tail wiggle
+                this.tailWiggle += this.tailWiggleSpeed * deltaTime;
+                if (this.tailWiggle > Math.PI * 2) {
+                    this.tailWiggle -= Math.PI * 2;
+                }
+            }
+            
+            handleBoundaries() {
+                // Approaching left boundary
+                if (this.x < BOUNDARY_MARGIN) {
+                    this.targetDirection = random(-Math.PI * 0.25, Math.PI * 0.25);
+                }
+                // Approaching right boundary
+                else if (this.x > W - BOUNDARY_MARGIN) {
+                    this.targetDirection = random(Math.PI * 0.75, Math.PI * 1.25);
+                }
+                
+                // Approaching top boundary
+                if (this.y < BOUNDARY_MARGIN) {
+                    this.targetDirection = random(Math.PI * 0.25, Math.PI * 0.75);
+                }
+                // Approaching bottom boundary
+                else if (this.y > H - BOUNDARY_MARGIN) {
+                    this.targetDirection = random(Math.PI * 1.25, Math.PI * 1.75);
+                }
+                
+                // Hard boundaries (as a safety measure)
+                this.x = Math.max(5, Math.min(W - 5, this.x));
+                this.y = Math.max(5, Math.min(H - 5, this.y));
+            }
+            
+            smoothTurn(deltaTime) {
+                // Calculate angle difference, considering the shortest path
+                let angleDiff = this.targetDirection - this.direction;
+                
+                // Normalize angle difference to be between -PI and PI
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                
+                // Apply turn based on turn speed
+                const turnAmount = this.turnSpeed * deltaTime;
+                
+                if (Math.abs(angleDiff) <= turnAmount) {
+                    this.direction = this.targetDirection;
+                } else {
+                    this.direction += (angleDiff > 0 ? 1 : -1) * turnAmount;
+                }
+                
+                // Normalize direction to be between 0 and 2*PI
+                while (this.direction < 0) this.direction += Math.PI * 2;
+                while (this.direction >= Math.PI * 2) this.direction -= Math.PI * 2;
+            }
+            
+            draw(ctx) {
+                ctx.save();
+                
+                // Move to fish position and rotate according to direction
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.direction);
+                
+                // Calculate tail wiggle effect
+                const tailOffset = Math.sin(this.tailWiggle) * this.tailAmplitude;
+                
+                // Draw the fish body (oval)
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size, this.size * 0.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw tail
+                ctx.fillStyle = this.secondaryColor;
+                ctx.beginPath();
+                ctx.moveTo(-this.size * 0.8, 0);
+                ctx.lineTo(-this.size * 1.6, -this.size * 0.5 + tailOffset);
+                ctx.lineTo(-this.size * 1.6, this.size * 0.5 + tailOffset);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Draw eye
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(this.size * 0.6, -this.size * 0.15, this.size * 0.15, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw pupil
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(this.size * 0.65, -this.size * 0.15, this.size * 0.07, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw fin
+                ctx.fillStyle = this.secondaryColor;
+                ctx.beginPath();
+                ctx.moveTo(0, -this.size * 0.3);
+                ctx.lineTo(-this.size * 0.3, -this.size * 0.8);
+                ctx.lineTo(this.size * 0.2, -this.size * 0.3);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+        
+        // Background elements
+        class Plant {
+            constructor() {
+                this.x = random(20, W - 20);
+                this.y = H;
+                this.height = random(50, 150);
+                this.width = random(15, 30);
+                this.segments = randomInt(3, 7);
+                this.color = `rgb(${randomInt(0, 50)}, ${randomInt(100, 200)}, ${randomInt(50, 100)})`;
+                this.swaySpeed = random(0.5, 1.5);
+                this.swayAmount = random(5, 15);
+                this.time = random(0, 100);
+            }
+            
+            update(deltaTime) {
+                this.time += deltaTime * this.swaySpeed;
+            }
+            
+            draw(ctx) {
+                const segmentHeight = this.height / this.segments;
+                
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Draw stem segments with increasing sway
+                for (let i = 0; i < this.segments; i++) {
+                    const segY = -i * segmentHeight;
+                    const swayFactor = (i + 1) / this.segments;
+                    const sway = Math.sin(this.time) * this.swayAmount * swayFactor;
+                    
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.ellipse(
+                        sway, 
+                        segY - segmentHeight/2, 
+                        this.width * (0.7 + 0.3 * swayFactor), 
+                        segmentHeight/2,
+                        Math.atan2(sway - 0, -segmentHeight),
+                        0, Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+                
+                ctx.restore();
+            }
+        }
+        
+        class Rock {
+            constructor() {
+                this.x = random(50, W - 50);
+                this.y = H - random(10, 40);
+                this.width = random(40, 100);
+                this.height = random(30, 60);
+                this.color = `rgb(${randomInt(100, 150)}, ${randomInt(100, 150)}, ${randomInt(100, 150)})`;
+                this.pointiness = random(0.1, 0.4);
+            }
+            
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                
+                // Create a lumpy rock shape using a series of points
+                const numPoints = 8;
+                for (let i = 0; i < numPoints; i++) {
+                    const angle = (i / numPoints) * Math.PI * 2;
+                    const radius = (1 - this.pointiness + Math.random() * this.pointiness * 2);
+                    const x = Math.cos(angle) * this.width * 0.5 * radius;
+                    const y = Math.sin(angle) * this.height * 0.5 * radius;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                
+                ctx.closePath();
+                ctx.fill();
+                
+                // Add some shading/texture
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.beginPath();
+                ctx.ellipse(-this.width * 0.2, -this.height * 0.2, this.width * 0.3, this.height * 0.2, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+        
+        // Create bubbles effect
+        class Bubble {
+            constructor() {
+                this.reset();
+                // Start at random Y position
+                this.y = random(0, H);
+            }
+            
+            reset() {
+                this.x = random(0, W);
+                this.y = H + random(0, 20);
+                this.size = random(2, 8);
+                this.speed = random(30, 80);
+                this.wobbleSpeed = random(1, 3);
+                this.wobbleAmount = random(0.5, 2);
+                this.wobblePos = random(0, Math.PI * 2);
+            }
+            
+            update(deltaTime) {
+                // Move upward
+                this.y -= this.speed * deltaTime;
+                
+                // Wobble side to side
+                this.wobblePos += this.wobbleSpeed * deltaTime;
+                
+                // Reset when off-screen
+                if (this.y < -20) {
+                    this.reset();
+                }
+            }
+            
+            draw(ctx) {
+                const wobbleX = Math.sin(this.wobblePos) * this.wobbleAmount;
+                
+                ctx.save();
+                // Draw bubble
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.beginPath();
+                ctx.arc(this.x + wobbleX, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw highlight
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.beginPath();
+                ctx.arc(this.x + wobbleX - this.size * 0.3, this.y - this.size * 0.3, this.size * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+        
+        // Create environment objects
+        const plants = [];
+        const rocks = [];
+        const bubbles = [];
+        
+        // Initialize plants
+        for (let i = 0; i < 6; i++) {
+            plants.push(new Plant());
+        }
+        
+        // Initialize rocks
+        for (let i = 0; i < 4; i++) {
+            rocks.push(new Rock());
+        }
+        
+        // Initialize bubbles
+        for (let i = 0; i < 30; i++) {
+            bubbles.push(new Bubble());
+        }
+        
+        // Initialize fish
+        for (let i = 0; i < NUM_FISH; i++) {
+            fishes.push(new Fish());
+        }
+        
+        // Draw a light ray effect
+        function drawLightRays(ctx) {
+            const numRays = 5;
+            
+            for (let i = 0; i < numRays; i++) {
+                const x = W * (0.2 + 0.6 * (i / (numRays - 1)));
+                const width = random(40, 80);
+                
+                // Create a gradient
+                const gradient = ctx.createLinearGradient(x, 0, x, H);
+                gradient.addColorStop(0, 'rgba(255, 255, 220, 0.12)');
+                gradient.addColorStop(1, 'rgba(255, 255, 220, 0)');
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(x - width/2, 0);
+                ctx.lineTo(x + width/2, 0);
+                ctx.lineTo(x + width, H);
+                ctx.lineTo(x - width, H);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+        
+        // Main game loop
+        function gameLoop(timestamp) {
+            // Calculate delta time for frame-independent movement
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = (timestamp - lastTime) / 1000; // convert to seconds
+            lastTime = timestamp;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+            
+            // Draw light rays
+            drawLightRays(ctx);
+            
+            // Draw and update plants
+            for (const plant of plants) {
+                plant.update(deltaTime);
+                plant.draw(ctx);
+            }
+            
+            // Draw rocks
+            for (const rock of rocks) {
+                rock.draw(ctx);
+            }
+            
+            // Update and draw fish
+            for (const fish of fishes) {
+                fish.update(deltaTime);
+                fish.draw(ctx);
+            }
+            
+            // Update and draw bubbles (after fish)
+            for (const bubble of bubbles) {
+                bubble.update(deltaTime);
+                bubble.draw(ctx);
+            }
+            
+            // Add slight water shimmering effect overlay
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+            for (let i = 0; i < 3; i++) {
+                const x = random(0, W);
+                const y = random(0, H);
+                const size = random(50, 150);
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Continue animation loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the animation loop
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

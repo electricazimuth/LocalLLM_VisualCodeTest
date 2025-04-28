@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const centerX = W / 2;
+        const centerY = H / 2;
+
+        const GRAVITY = 0.2;
+        const DAMPING = 0.8;
+        const SPIN_SPEED = (2 * Math.PI) / 5; // 360 degrees in 5 seconds
+
+        const BALL_RADIUS = 10;
+        const NUM_BALLS = 20;
+        const HEPTAGON_SIDES = 7;
+        const HEPTAGON_RADIUS = 180;
+
+        const colors = [
+            "#f8b862", "#f6ad49", "#f39800", "#f08300", "#ec6d51", "#ee7948", "#ed6d3d",
+            "#ec6800", "#ec6800", "#ee7800", "#eb6238", "#ea5506", "#ea5506", "#eb6101",
+            "#e49e61", "#e45e32", "#e17b34", "#dd7a56", "#db8449", "#d66a35"
+        ];
+
+        class Ball {
+            constructor(x, y, vx, vy, color, number) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = BALL_RADIUS;
+                this.mass = 1;
+                this.color = color;
+                this.number = number;
+                this.rotation = 0;
+                this.rotationSpeed = 0;
+            }
+
+            update() {
+                this.vy += GRAVITY;
+                this.x += this.vx;
+                this.y += this.vy;
+                this.rotation += this.rotationSpeed;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                ctx.beginPath();
+                ctx.arc(0, 0, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.fillStyle = "black";
+                ctx.font = "10px Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(this.number, 0, 0);
+                ctx.restore();
+            }
+        }
+
+        function getHeptagonPoints(angleOffset) {
+            const points = [];
+            for (let i = 0; i < HEPTAGON_SIDES; i++) {
+                const angle = angleOffset + (2 * Math.PI / HEPTAGON_SIDES) * i;
+                const x = centerX + HEPTAGON_RADIUS * Math.cos(angle);
+                const y = centerY + HEPTAGON_RADIUS * Math.sin(angle);
+                points.push({ x, y });
+            }
+            return points;
+        }
+
+        function pointInsideHeptagon(x, y, heptagon) {
+            // Ray casting algorithm
+            let count = 0;
+            for (let i = 0; i < heptagon.length; i++) {
+                const a = heptagon[i];
+                const b = heptagon[(i + 1) % heptagon.length];
+                if (((a.y > y) !== (b.y > y)) &&
+                    (x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x)) {
+                    count++;
+                }
+            }
+            return count % 2 === 1;
+        }
+
+        function reflectBallFromWall(ball, a, b) {
+            const wallDX = b.x - a.x;
+            const wallDY = b.y - a.y;
+            const length = Math.hypot(wallDX, wallDY);
+            const nx = wallDY / length;
+            const ny = -wallDX / length;
+            const vDotN = ball.vx * nx + ball.vy * ny;
+            ball.vx -= 2 * vDotN * nx;
+            ball.vy -= 2 * vDotN * ny;
+
+            ball.vx *= DAMPING;
+            ball.vy *= DAMPING;
+
+            // Add rotation effect
+            ball.rotationSpeed = vDotN * 0.05;
+        }
+
+        function handleWallCollisions(ball, heptagon) {
+            for (let i = 0; i < heptagon.length; i++) {
+                const a = heptagon[i];
+                const b = heptagon[(i + 1) % heptagon.length];
+
+                const wallDX = b.x - a.x;
+                const wallDY = b.y - a.y;
+                const length = Math.hypot(wallDX, wallDY);
+                const nx = wallDY / length;
+                const ny = -wallDX / length;
+
+                const px = ball.x - a.x;
+                const py = ball.y - a.y;
+                const dist = px * nx + py * ny;
+
+                if (dist < ball.r) {
+                    ball.x += (ball.r - dist) * nx;
+                    ball.y += (ball.r - dist) * ny;
+                    reflectBallFromWall(ball, a, b);
+                }
+            }
+        }
+
+        function handleBallCollisions(balls) {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    const a = balls[i];
+                    const b = balls[j];
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const dist = Math.hypot(dx, dy);
+                    const minDist = a.r + b.r;
+                    if (dist < minDist) {
+                        const angle = Math.atan2(dy, dx);
+                        const totalMass = a.mass + b.mass;
+                        const overlap = minDist - dist;
+
+                        // Separate balls
+                        a.x -= (overlap * (b.mass / totalMass)) * Math.cos(angle);
+                        a.y -= (overlap * (b.mass / totalMass)) * Math.sin(angle);
+                        b.x += (overlap * (a.mass / totalMass)) * Math.cos(angle);
+                        b.y += (overlap * (a.mass / totalMass)) * Math.sin(angle);
+
+                        // Exchange velocities
+                        const ax = a.vx;
+                        const ay = a.vy;
+                        a.vx = b.vx;
+                        a.vy = b.vy;
+                        b.vx = ax;
+                        b.vy = ay;
+                    }
+                }
+            }
+        }
+
+        const balls = [];
+
+        function initBalls() {
+            for (let i = 0; i < NUM_BALLS; i++) {
+                const angle = Math.random() * 2 * Math.PI;
+                const speed = Math.random() * 2;
+                const vx = speed * Math.cos(angle);
+                const vy = speed * Math.sin(angle);
+                const color = colors[i % colors.length];
+                balls.push(new Ball(centerX, centerY, vx, vy, color, i + 1));
+            }
+        }
+
+        let startTime = null;
+
+        function gameLoop(timestamp) {
+            if (!startTime) startTime = timestamp;
+            const elapsed = (timestamp - startTime) / 1000;
+            const angleOffset = elapsed * SPIN_SPEED;
+
+            ctx.clearRect(0, 0, W, H);
+
+            const heptagon = getHeptagonPoints(angleOffset);
+
+            // Draw Heptagon
+            ctx.beginPath();
+            ctx.moveTo(heptagon[0].x, heptagon[0].y);
+            for (let i = 1; i < heptagon.length; i++) {
+                ctx.lineTo(heptagon[i].x, heptagon[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            for (const ball of balls) {
+                ball.update();
+                handleWallCollisions(ball, heptagon);
+            }
+
+            handleBallCollisions(balls);
+
+            for (const ball of balls) {
+                ball.draw(ctx);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        initBalls();
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This implementation draws 20 balls with unique numbers and colors inside a spinning heptagon.
+        Ball physics includes gravity, damping, wall reflection, and basic inter-ball collisions.
+        The heptagon rotates at a fixed speed, and collisions respond to the moving container walls.
+        For performance, no optimization like spatial hashing is used, but could be added for >20 balls.
+    </section>
+</body>
+</html>

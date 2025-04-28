@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chicken Simulation</title>
+    <style>
+        body { margin: 10px; overflow: hidden; background-color: #eee; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #999; background-color: #90ee90; } 
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        const canvas = document.getElementBy2("simulationCanvas");
+        const ctx = canvas.getContext("2d");
+
+        class Chicken {
+            constructor() {
+                this.position = {x: canvas.width/2, y: canvas.height/2};
+                this.velocity = {x: 0, y: 0};
+                this.state = 'wandering';
+                this.egglayingInterval = 3; // 3 seconds between eggs
+                this.egglayingTimer = 0;
+                this.layingDuration = 1; // 1 second laying
+                this.layingTimer = 0;
+            }
+
+            update(dt) {
+                if (this.state === 'wandering') {
+                    this.egglayingTimer += dt;
+                    if (this.egglayingTimer >= this.egglayingInterval) {
+                        this.state = 'laying';
+                        this.layingTimer = 0;
+                    } else {
+                        this.move(dt);
+                        this.checkBounds();
+                        this.checkRandomDirectionChange(dt);
+                    }
+                } else if (this.state === 'laying') {
+                    this.layingTimer += dt;
+                    if (this.layingTimer >= this.layingDuration) {
+                        this.state = 'wandering';
+                        this.egglayingTimer = 0;
+                        this.changeDirection();
+                    }
+                }
+            }
+
+            move(dt) {
+                this.position.x += this.velocity.x * dt;
+                this.position.y += this.velocity.y * dt;
+            }
+
+            checkBounds() {
+                if (this.position.x <= 0 || this.position.x >= canvas.width) this.velocity.x = -this.velocity.x;
+                if (this.position.y <= 0 || this.position.y >= canvas.height) this.velocity.y = -this.velocity.y;
+            }
+
+            changeDirection() {
+                const speed = 100;
+                const angle = Math.random() * 2 * Math.PI;
+                this.velocity.x = speed * Math.cos(angle);
+                this.velocity.y = speed * Math.sin(angle);
+            }
+
+            checkRandomDirectionChange(dt) {
+                const directionChangeProbability = 0.01; // 1% chance per second
+                if (Math.random() < directionChangeProbability * dt) this.changeDirection();
+            }
+
+            layEgg() {
+                const egg = new Egg(this.position.x, this.position.y);
+                eggs.push(egg);
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.position.x, this.position.y, 10, 0, 2*Math.PI);
+                ctx.fillStyle = 'red';
+                ctx.fill();
+
+                let angle = this.velocity.x === 0 && this.velocity.y === 0 ? Math.PI/2 : Math.atan2(this.velocity.y, this.velocity.x) - Math.PI/2;
+                ctx.save();
+                ctx.translate(this.position.x, this.position.y);
+                ctx.rotate(angle);
+
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(10, 0);
+                ctx.lineTo(5, -5);
+                ctx.closePath();
+                ctx.fillStyle = 'yellow';
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Egg {
+            constructor(x, y) {
+                this.position = {x, y};
+                this.radius = 5;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.ellipse(this.position.x, this.position.y, this.radius, this.radius/2, 0, 0, 2*Math.PI);
+                ctx.fillStyle = 'yellow';
+                ctx.fill();
+            }
+        }
+
+        let chicken = new Chicken();
+        let eggs = [];
+        let lastTime = 0;
+
+        function animationLoop(time) {
+            const dt = (time - lastTime)/1000;
+            lastTime = time;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            chicken.update(dt);
+
+            if (chicken.state === 'laying') chicken.layEgg();
+
+            chicken.draw(ctx);
+            eggs.forEach(egg => egg.draw(ctx));
+
+            requestAnimationFrame(animationLoop);
+        }
+
+        function startSimulation() {
+            lastTime = performance.now();
+            requestAnimationFrame(animationLoop);
+        }
+
+        startSimulation();
+    </script>
+
+    <section id="notes">
+        <h3>Developer Notes</h3>
+        <p>
+            The simulation uses a <code>Chicken</code> class to manage the chicken's state, position, velocity, and drawing. Eggs are represented by the <code>Egg</code> class, stored in an array and drawn each frame. The main animation loop uses <code>requestAnimationFrame</code> with delta time (<code>dt</code>) to ensure smooth, frame-rate independent updates.
+        </p>
+        <p>
+            The chicken wanders with periodic direction changes (1% chance per second) and reverses direction upon hitting canvas edges. When laying an egg, it pauses for 1 second, then resumes wandering with a new random direction. Eggs are drawn as yellow ellipses where laid.
+        </p>
+    </section>
+</body>
+</html>

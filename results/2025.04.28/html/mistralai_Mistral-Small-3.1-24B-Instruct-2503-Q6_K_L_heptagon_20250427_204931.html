@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 1px solid black;
+            background-color: #fff;
+            display: block;
+            margin: 20px auto;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="800"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const GRAVITY = 0.5;
+        const DAMPING = 0.9;
+        const SPIN_SPEED = 0.04; // Radians per frame
+        const BALL_COUNT = 20;
+        const BALL_RADIUS = 10;
+        const COLORS = [
+            '#f8b862', '#f6ad49', '#f39800', '#f08300', '#ec6d51', '#ee7948', '#ed6d3d',
+            '#ec6800', '#ec6800', '#ee7800', '#eb6238', '#ea5506', '#ea5506', '#eb6101',
+            '#e49e61', '#e45e32', '#e17b34', '#dd7a56', '#db8449', '#d66a35'
+        ];
+        const HEPTAGON_RADIUS = 250;
+
+        let balls = [];
+        let angle = 0;
+
+        // Heptagon points calculation
+        function heptagonPoints(centerX, centerY, radius) {
+            let points = [];
+            for (let i = 0; i < 7; i++) {
+                let angle = (2 * Math.PI * i) / 7;
+                points.push({
+                    x: centerX + radius * Math.cos(angle),
+                    y: centerY + radius * Math.sin(angle)
+                });
+            }
+            return points;
+        }
+
+        // Ball class
+        class Ball {
+            constructor(id, x, y, vx, vy, color) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.color = color;
+                this.radius = BALL_RADIUS;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.fillStyle = 'black';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.id, this.x, this.y);
+                ctx.closePath();
+            }
+        }
+
+        // Initialize balls
+        function initBalls() {
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let x = W / 2;
+                let y = H / 2;
+                let vx = (Math.random() - 0.5) * 4;
+                let vy = (Math.random() - 0.5) * 4;
+                let color = COLORS[i % COLORS.length];
+                balls.push(new Ball(i + 1, x, y, vx, vy, color));
+            }
+        }
+
+        // Clear canvas
+        function clearCanvas() {
+            ctx.clearRect(0, 0, W, H);
+        }
+
+        // Draw heptagon
+        function drawHeptagon(ctx, centerX, centerY, radius) {
+            let points = heptagonPoints(centerX, centerY, radius);
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = 'black';
+            ctx.stroke();
+        }
+
+        // Check collision with heptagon walls
+        function checkWallCollision(ball) {
+            let points = heptagonPoints(W / 2, H / 2, HEPTAGON_RADIUS);
+            for (let i = 0; i < points.length; i++) {
+                let nextPoint = points[(i + 1) % points.length];
+                let dx = nextPoint.x - points[i].x;
+                let dy = nextPoint.y - points[i].y;
+                let length = Math.sqrt(dx * dx + dy * dy);
+                let normalX = dy / length;
+                let normalY = -dx / length;
+                let relativeX = ball.x - points[i].x;
+                let relativeY = ball.y - points[i].y;
+                let projection = relativeX * normalX + relativeY * normalY;
+                if (projection < ball.radius) {
+                    let overlap = ball.radius - projection;
+                    ball.x += overlap * normalX;
+                    ball.y += overlap * normalY;
+                    let relativeVelocity = ball.vx * normalX + ball.vy * normalY;
+                    if (relativeVelocity < 0) {
+                        ball.vx -= 2 * relativeVelocity * normalX;
+                        ball.vy -= 2 * relativeVelocity * normalY;
+                        ball.vx *= DAMPING;
+                        ball.vy *= DAMPING;
+                    }
+                }
+            }
+        }
+
+        // Check collision between balls
+        function checkBallCollision(ball1, ball2) {
+            let dx = ball2.x - ball1.x;
+            let dy = ball2.y - ball1.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < ball1.radius + ball2.radius) {
+                let normalX = dx / distance;
+                let normalY = dy / distance;
+                let relativeVelocity = (ball1.vx - ball2.vx) * normalX + (ball1.vy - ball2.vy) * normalY;
+                if (relativeVelocity < 0) {
+                    let m1 = ball1.radius * ball1.radius;
+                    let m2 = ball2.radius * ball2.radius;
+                    let newVx1 = ball1.vx - (relativeVelocity * (m2 / (m1 + m2))) * normalX;
+                    let newVy1 = ball1.vy - (relativeVelocity * (m2 / (m1 + m2))) * normalY;
+                    let newVx2 = ball2.vx + (relativeVelocity * (m1 / (m1 + m2))) * normalX;
+                    let newVy2 = ball2.vy + (relativeVelocity * (m1 / (m1 + m2))) * normalY;
+                    ball1.vx = newVx1 * DAMPING;
+                    ball1.vy = newVy1 * DAMPING;
+                    ball2.vx = newVx2 * DAMPING;
+                    ball2.vy = newVy2 * DAMPING;
+                    let overlap = (ball1.radius + ball2.radius - distance) / 2;
+                    ball1.x -= overlap * normalX;
+                    ball1.y -= overlap * normalY;
+                    ball2.x += overlap * normalX;
+                    ball2.y += overlap * normalY;
+                }
+            }
+        }
+
+        // Update ball positions
+        function updateBalls() {
+            for (let ball of balls) {
+                ball.vy += GRAVITY;
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+                checkWallCollision(ball);
+            }
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    checkBallCollision(balls[i], balls[j]);
+                }
+            }
+        }
+
+        // Draw all balls
+        function drawBalls() {
+            for (let ball of balls) {
+                ball.draw(ctx);
+            }
+        }
+
+        // Game loop
+        function gameLoop(timestamp) {
+            clearCanvas();
+            updateBalls();
+            drawHeptagon(ctx, W / 2, H / 2, HEPTAGON_RADIUS);
+            angle += SPIN_SPEED;
+            drawBalls();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize and start the game loop
+        initBalls();
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <!-- Notes and comments about the implementation can be added here -->
+    </section>
+</body>
+</html>

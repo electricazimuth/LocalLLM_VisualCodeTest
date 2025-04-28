@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color:rgb(207, 247, 255); }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        class Fish {
+            constructor(x, y, vx, vy, size, color) {
+                this.x = x || Math.random() * W;
+                this.y = y || Math.random() * H;
+                this.vx = vx || (Math.random() - 0.5) * 2;
+                this.vy = vy || (Math.random() - 0.5) * 2;
+                this.size = size || Math.random() * 10 + 5;
+                this.color = color || this.getRandomColor();
+            }
+
+            getRandomColor() {
+                const letters = '0123456789ABCDEF';
+                let color = '#';
+                for (let i = 0; i < 6; i++) color += letters[Math.floor(Math.random() * 16)];
+                return color;
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+
+                if (this.x + this.size > W || this.x - this.size < 0) this.vx = -this.vx;
+                if (this.y + this.size > H || this.y - this.size < 0) this.vy = -this.vy;
+
+                this.vx += (Math.random() - 0.5) * 0.1 * deltaTime;
+                this.vy += (Math.random() - 0.5) * 0.1 * deltaTime;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                const angle = Math.atan2(this.vy, this.vx);
+                ctx.rotate(angle);
+
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size/2, this.size/4, 0, 0, 2*Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(-this.size/2, 0);
+                ctx.lineTo(-this.size/2 - this.size/4, -this.size/4);
+                ctx.lineTo(-this.size/2 - this.size/4, this.size/4);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        const fishSchool = [];
+        for (let i = 0; i < 15; i++) fishSchool.push(new Fish());
+
+        let previousTimestamp = 0;
+        function gameLoop(timestamp) {
+            if (previousTimestamp === 0) previousTimestamp = timestamp;
+            const deltaTime = (timestamp - previousTimestamp)/1000;
+
+            ctx.clearRect(0, 0, W, H);
+            fishSchool.forEach(fish => fish.update(deltaTime));
+            fishSchool.forEach(fish => fish.draw(ctx));
+
+            previousTimestamp = timestamp;
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

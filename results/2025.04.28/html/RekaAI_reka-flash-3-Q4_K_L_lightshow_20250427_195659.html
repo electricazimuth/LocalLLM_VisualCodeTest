@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Psychedelic Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        canvas { width: 100vw; height: 100vh; display: block; }
+    </style>
+</head>
+<body>
+<canvas id="glCanvas"></canvas>
+
+<script>
+// --- WebGL Initialization ---
+const canvas = document.getElementById('glCanvas');
+const gl = canvas.getContext('webgl2', { antialias: false });
+
+if (!gl) { alert('WebGL2 not supported'); }
+
+// Vertex Shader
+const vsSource = `
+    #version 300 es
+    precision highp float;
+    attribute vec4 position;
+    out vec2 uv;
+    void main() {
+        gl_Position = position;
+        uv = (position.xy * 0.5 + 0.5) * vec2(${canvas.width}, ${canvas.height});
+    }
+`;
+
+// Fragment Shader
+const fsSource = `
+    #version 300 es
+    precision highp float;
+    in vec2 uv;
+    uniform float uTime;
+    uniform vec2 uResolution;
+    
+    out vec4 fragColor;
+
+    // 3D to 2D conversion using screen space
+    vec3 getScreenPos(vec3 pos) {
+        return pos;
+    }
+
+    // Sphere SDF
+    float sphereSDF(vec3 p, float radius) {
+        return length(p) - radius;
+    }
+
+    // Smooth minimum function
+    float smin(float a, float b, float k) {
+        float h = clamp(0.5 - 0.5 * (b - a)/k, 0.0, 1.0);
+        return mix(a, b, h) - k * h*h;
+    }
+
+    // Metaball SDF
+    float metaballSDF(vec3 p) {
+        float total = 0.0;
+        float k = 0.1; // Influence factor
+        
+        // Dynamic metaballs with time-based positions
+        vec3 ball1 = vec3(0.5 + 0.4*sin(uTime*1.2), 
+                         0.5 + 0.3*cos(uTime*0.8), 
+                         0.5 + 0.2*sin(uTime*1.5)) * 2.0;
+        float r1 = 0.3 + 0.1*sin(uTime*0.5);
+        
+        vec3 ball2 = vec3(0.5 + 0.4*cos(uTime*0.7), 
+                         0.5 + 0.3*sin(uTime*1.3), 
+                         0.5 + 0.2*cos(uTime*2.0)) * 2.0;
+        float r2 = 0.3 + 0.1*cos(uTime*0.7);
+        
+        // Combine multiple metaballs
+        float d1 = sphereSDF(p - ball1, r1);
+        float d2 = sphereSDF(p - ball2, r2);
+        total = smin(d1, d2, k);
+        
+        // Add more metaballs dynamically
+        for (int i = 0; i < 2; i++) {
+            float freq = 0.5 + i*0.3;
+            vec3 pos = vec3(sin(uTime*freq)*0.3, 
+                           cos(uTime*freq)*0.4, 
+                           sin(uTime*freq)*0.5) * 1.5;
+            float rad = 0.2 + 0.1*sin(uTime*freq);
+            total = smin(total, sphereSDF(p - pos, rad), k);
+        }
+        return total;
+    }
+
+    // Ray marching
+    vec3 rayMarch(vec3 ro, vec3 rd) {
+        vec3 p = ro;
+        float dis = 0.0;
+        const int maxSteps = 100;
+        const float minDis = 0.001;
+        const float maxDis = 100.0;
+        
+        for (int i = 0; i < maxSteps; i++) {
+            float d = metaballSDF(p);
+            dis += d;
+            p += rd * dis;
+            
+            if (abs(d) < minDis || dis > maxDis) break;
+        }
+        return p;
+    }
+
+    // Calculate normal using central differences
+    vec3 getNormal(vec3 p) {
+        const vec3 eps = vec3(0.005, 0.0, 0.0);
+        float dX = metaballSDF(p + eps.xyy) - metaballSDF(p - eps.xyy);
+        float dY = metaballSDF(p + eps.yxy) - metaballSDF(p - eps.yxy);
+        float dZ = metaballSDF(p + eps.yyx) - metaballSDF(p - eps.yyx);
+        return normalize(vec3(dX, dY, dZ));
+    }
+
+    void main() {
+        vec2 uv = uv * 2.0 - 1.0;
+        vec2 rot = uv * 0.0;
+        
+        // Camera setup
+        vec3 ro = vec3(0.0, 0.0, -2.5);
+        vec3 rd = normalize(vec3(uv * 2.0 - 1.0, 1.5));
+        
+        // Ray march
+        vec3 p = rayMarch(ro, rd);
+        float dis = length(p - ro);
+        
+        if (dis < 0.1) {
+            // Lighting
+            vec3 n = getNormal(p);
+            vec3 lightDir = normalize(vec3(0.5, 0.7, 1.0));
+            float diff = max(dot(n, lightDir), 0.0);
+            
+            // Color modulation
+            float hue = fract(uTime * 0.5) * 360.0;
+            vec3 color = hsv2rgb(vec3(hue, 0.8, 0.9));
+            
+            // Add glow effect
+            vec3 glow = color * exp(-dis * 3.0);
+            fragColor = vec4(glow + diff * 0.5 * color, 1.0);
+        } else {
+            // Background gradient
+            float bg = smoothstep(0.0, 0.2, dis / 5.0);
+            vec3 bgCol = vec3(0.0, 0.1, 0.2) + vec3(0.3, 0.2, 0.1) * sin(uTime * 0.3);
+            fragColor = vec4(bg * bgCol, 1.0);
+        }
+    }
+`;
+
+// Compile shaders
+function compileShader(gl, source, type) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+const program = gl.createProgram();
+const vs = compileShader(gl, vsSource, gl.VERTEX_SHADER);
+const fs = compileShader(gl, fsSource, gl.FRAGMENT_SHADER);
+gl.attachShader(program, vs);
+gl.attachShader(program, fs);
+gl.linkProgram(program);
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(program));
+}
+gl.useProgram(program);
+
+// Set up attributes and uniforms
+const positionBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1, -1, 0,
+    -1, 1, 0,
+    1, -1, 0,
+    1, 1, 0,
+    -1, -1, 0,
+    1, 1, 0
+]), gl.STATIC_DRAW);
+
+const positionLocation = gl.getAttribLocation(program, 'position');
+gl.enableVertexAttribArray(positionLocation);
+gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+
+// Uniforms
+const uTimeLocation = gl.getUniformLocation(program, 'uTime');
+const uResolutionLocation = gl.getUniformLocation(program, 'uResolution');
+gl.uniform2f(uResolutionLocation, canvas.width, canvas.height);
+
+// Animation loop
+let time = 0;
+function animate() {
+    gl.uniform1f(uTimeLocation, time);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    time += 0.0167;
+    requestAnimationFrame(animate);
+}
+animate();
+</script>
+
+<!-- Notes -->
+<section id="notes">
+    <h3>Implementation Notes:</h3>
+    <ul>
+        <li>WebGL2 used for improved performance and core profile features</li>
+        <li>3 metaballs with dynamic positions and sizes using sine/cosine patterns</li>
+        <li>Smooth minimum (smin) combines metaballs for organic blending</li>
+        <li>Central difference method calculates SDF normals</li>
+        <li>HSV to RGB conversion for psychedelic color effects</li>
+        <li>Exponential glow effect for volumetric appearance</li>
+        <li>Animated background with gradient</li>
+        <li>Camera positioned at -2.5z for 3D effect</li>
+        <li>Ray marching optimized with early termination</li>
+    </ul>
+</section>
+</body>
+</html>

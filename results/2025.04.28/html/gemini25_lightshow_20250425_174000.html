@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Psychedelic Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <!-- Vertex Shader -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        // Attribute: Vertex positions (we'll define a full-screen quad)
+        attribute vec2 a_position;
+
+        // Varying: Pass texture coordinates to the fragment shader
+        // We calculate them based on the vertex position
+        varying vec2 v_texCoord;
+
+        void main() {
+            // Map vertex positions from [-1, 1] range directly to clip space
+            gl_Position = vec4(a_position, 0.0, 1.0);
+
+            // Calculate texture coordinates from position: [-1, 1] -> [0, 1]
+            v_texCoord = a_position * 0.5 + 0.5;
+        }
+    </script>
+
+    <!-- Fragment Shader -->
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float; // High precision needed for ray marching
+
+        // Uniforms from JavaScript
+        uniform vec2 u_resolution; // Canvas resolution (width, height)
+        uniform float u_time;      // Time elapsed since start
+
+        // --- Metaball Data ---
+        // Define the maximum number of metaballs the shader can handle
+        #define MAX_METABALLS 8
+        uniform vec3 u_metaballPositions[MAX_METABALLS];
+        uniform float u_metaballRadii[MAX_METABALLS];
+        uniform int u_numMetaballs; // Actual number of metaballs currently active
+
+        // Varying from Vertex Shader
+        varying vec2 v_texCoord;
+
+        // --- Ray Marching Constants ---
+        const int MAX_STEPS = 100;        // Max iterations for ray marching
+        const float MAX_DIST = 100.0;     // Max distance to march
+        const float SURFACE_DIST = 0.001; // Epsilon for hitting the surface
+
+        // --- SDF Functions ---
+
+        // Signed Distance Function for a sphere
+        float sdSphere(vec3 p, vec3 center, float radius) {
+            return length(p - center) - radius;
+        }
+
+        // Smooth Minimum function (polynomial version - often cheaper than exponential)
+        // k controls the smoothness (smaller k = smoother blend)
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+
+        // Scene Signed Distance Function: Combines all metaballs
+        // Returns the shortest distance from point 'p' to any metaball surface
+        float mapScene(vec3 p) {
+            float minDist = MAX_DIST; // Start with a large distance
+
+            // Smoothly blend the distances to all active metaballs
+            for (int i = 0; i < MAX_METABALLS; ++i) {
+                // Break early if we've processed all active metaballs
+                if (i >= u_numMetaballs) break;
+
+                float ballDist = sdSphere(p, u_metaballPositions[i], u_metaballRadii[i]);
+                // Adjust 'k' based on time or other factors for pulsing smoothness
+                float k = 8.0 + 4.0 * sin(u_time * 0.5 + float(i) * 1.5);
+                minDist = smin(minDist, ballDist, k);
+            }
+            return minDist;
+        }
+
+        // --- Normal Calculation ---
+        // Calculates the surface normal at point 'p' using the gradient of the SDF
+        vec3 calculateNormal(vec3 p) {
+            vec2 e = vec2(SURFACE_DIST * 0.5, 0.0); // Small offset
+            return normalize(vec3(
+                mapScene(p + e.xyy) - mapScene(p - e.xyy), // Gradient in X
+                mapScene(p + e.yxy) - mapScene(p - e.yxy), // Gradient in Y
+                mapScene(p + e.yyx) - mapScene(p - e.yyx)  // Gradient in Z
+            ));
+        }
+
+        // --- Psychedelic Color Function ---
+        vec3 psychedelicColor(vec3 pos, vec3 normal, float dist) {
+            // Base color shift based on position and time
+            vec3 baseColor = 0.5 + 0.5 * cos(u_time * 0.5 + pos * 1.5 + vec3(0.0, 2.0, 4.0));
+
+            // Add some variation based on the normal (surface orientation)
+             // Use absolute value of normal components for more symmetry
+            vec3 normalColorFactor = abs(normal * 0.5 + 0.5); // Map normal [-1,1] to [0,1] roughly
+            baseColor = mix(baseColor, normalColorFactor, 0.4);
+
+            // Introduce some subtle high-frequency noise/banding based on distance traveled
+            float banding = sin(dist * 15.0 + u_time * 5.0) * 0.1 + 0.9; // Subtle brightness bands
+            baseColor *= banding;
+
+            // Add a 'glow' or 'aura' effect based on distance - brighter near camera
+            float glow = pow(smoothstep(10.0, 2.0, dist), 1.5); // Brighter when closer (dist < 10)
+            baseColor += glow * 0.3;
+
+            // Ensure colors stay vibrant and don't go completely dark
+            baseColor = clamp(baseColor, 0.1, 1.0);
+
+             // Add a simple hue shift over time for overall color cycling
+            float hueShift = u_time * 0.1;
+            mat3 hueRotation = mat3(
+                cos(hueShift) + 0.707 * (1.0 - cos(hueShift)), 0.707 * (1.0 - cos(hueShift)) - 0.707 * sin(hueShift), 0.707 * (1.0 - cos(hueShift)) + 0.707 * sin(hueShift),
+                0.707 * (1.0 - cos(hueShift)) + 0.707 * sin(hueShift), cos(hueShift) + 0.707 * (1.0 - cos(hueShift)), 0.707 * (1.0 - cos(hueShift)) - 0.707 * sin(hueShift),
+                0.707 * (1.0 - cos(hueShift)) - 0.707 * sin(hueShift), 0.707 * (1.0 - cos(hueShift)) + 0.707 * sin(hueShift), cos(hueShift) + 0.707 * (1.0 - cos(hueShift))
+            );
+            // baseColor = hueRotation * baseColor; // Optional: Apply hue rotation matrix
+
+            return baseColor;
+        }
+
+
+        // --- Main Function ---
+        void main() {
+            // --- Camera and Ray Setup ---
+            // Calculate normalized device coordinates (NDC) [-1, 1]
+            vec2 uv = (gl_FragCoord.xy / u_resolution.xy) * 2.0 - 1.0;
+            // Correct for aspect ratio
+            uv.x *= u_resolution.x / u_resolution.y;
+
+            // Camera position (origin) - move it back along Z
+            vec3 camPos = vec3(0.0, 0.0, 4.0 + sin(u_time * 0.1) * 0.5); // Gentle camera dolly
+
+            // Ray direction (pointing from camera into the scene)
+            // Adjust the Z component (-1.5 here) to control field of view
+            vec3 rayDir = normalize(vec3(uv, -1.5));
+
+            // --- Ray Marching Loop ---
+            float totalDist = 0.0; // Total distance traveled by the ray
+            vec3 rayPos = camPos;  // Current position along the ray
+            vec3 finalColor = vec3(0.0); // Initialize color to black
+
+            for (int i = 0; i < MAX_STEPS; i++) {
+                float dist = mapScene(rayPos); // Get distance to nearest surface
+
+                // Check if the ray is close enough to the surface (hit)
+                if (dist < SURFACE_DIST) {
+                    vec3 normal = calculateNormal(rayPos);
+
+                    // Simple lighting: Ambient + Diffuse
+                    vec3 lightDir = normalize(vec3(0.5, 0.8, -0.3)); // Fixed light direction
+                    float diffuse = max(dot(normal, lightDir), 0.0);
+                    vec3 ambient = vec3(0.2);
+
+                    // Get psychedelic color based on hit position, normal, and distance
+                    vec3 surfaceColor = psychedelicColor(rayPos, normal, totalDist);
+
+                    // Combine lighting and color
+                    finalColor = ambient * surfaceColor + diffuse * surfaceColor;
+
+                    break; // Exit loop on hit
+                }
+
+                // Check if the ray has gone too far or is diverging
+                if (totalDist > MAX_DIST) {
+                    break; // Exit loop if max distance reached
+                }
+
+                // March the ray forward by the estimated distance
+                totalDist += dist;
+                rayPos += rayDir * dist;
+            }
+
+            // Output the final color (or black if no hit)
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    </script>
+
+    <script>
+        // --- Standard WebGL Boilerplate ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported. Please use a modern browser like Chrome or Firefox.');
+            throw new Error('WebGL not supported');
+        }
+
+        // --- Shader Compilation Helper ---
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            const success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (success) {
+                return shader;
+            }
+            console.error("Shader compilation error:", gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+
+        // --- Program Linking Helper ---
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            const success = gl.getProgramParameter(program, gl.LINK_STATUS);
+            if (success) {
+                return program;
+            }
+            console.error("Program linking error:", gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+            return null;
+        }
+
+        // --- Get Shader Sources ---
+        const vertexShaderSource = document.getElementById('vertex-shader').text;
+        const fragmentShaderSource = document.getElementById('fragment-shader').text;
+
+        // --- Compile Shaders and Link Program ---
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const program = createProgram(gl, vertexShader, fragmentShader);
+
+        if (!program) {
+            throw new Error("Failed to create shader program.");
+        }
+
+        // --- Look up attribute and uniform locations ---
+        const positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+        const resolutionUniformLocation = gl.getUniformLocation(program, "u_resolution");
+        const timeUniformLocation = gl.getUniformLocation(program, "u_time");
+        const numMetaballsUniformLocation = gl.getUniformLocation(program, "u_numMetaballs");
+
+        // Look up metaball uniform array locations
+        const metaballPositionsLocation = gl.getUniformLocation(program, "u_metaballPositions");
+        const metaballRadiiLocation = gl.getUniformLocation(program, "u_metaballRadii");
+
+
+        // --- Create Buffer for Fullscreen Quad ---
+        // Two triangles covering the entire screen in clip space coordinates [-1, 1]
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        const positions = [
+            -1, -1, // Triangle 1
+             1, -1,
+            -1,  1,
+            -1,  1, // Triangle 2
+             1, -1,
+             1,  1,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        // --- Metaball Data (JavaScript side) ---
+        const MAX_METABALLS_JS = 8; // Must match shader #define
+        const numMetaballs = 6; // Let's use 6 metaballs
+        let metaballs = [];
+
+        function initializeMetaballs() {
+            metaballs = [];
+            for (let i = 0; i < numMetaballs; i++) {
+                metaballs.push({
+                    // Store parameters for animation calculation
+                    basePos: [Math.random() * 2.0 - 1.0, Math.random() * 2.0 - 1.0, Math.random() * 0.5 - 0.25],
+                    orbitRadius: [0.5 + Math.random() * 0.8, 0.5 + Math.random() * 0.8, 0.2 + Math.random() * 0.4],
+                    speed: [0.2 + Math.random() * 0.5, 0.2 + Math.random() * 0.5, 0.1 + Math.random() * 0.3],
+                    phase: [Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2],
+                    baseRadius: 0.25 + Math.random() * 0.2,
+                    radiusSpeed: 0.3 + Math.random() * 0.4,
+                    radiusPhase: Math.random() * Math.PI * 2,
+                    // Current values to be passed to shader
+                    currentPos: [0, 0, 0],
+                    currentRadius: 0
+                });
+            }
+        }
+
+        function updateMetaballs(time) {
+            let positionsArray = new Float32Array(MAX_METABALLS_JS * 3);
+            let radiiArray = new Float32Array(MAX_METABALLS_JS);
+
+            for (let i = 0; i < numMetaballs; i++) {
+                const mb = metaballs[i];
+                // Calculate orbiting position
+                mb.currentPos[0] = mb.basePos[0] + Math.cos(time * mb.speed[0] + mb.phase[0]) * mb.orbitRadius[0];
+                mb.currentPos[1] = mb.basePos[1] + Math.sin(time * mb.speed[1] + mb.phase[1]) * mb.orbitRadius[1];
+                mb.currentPos[2] = mb.basePos[2] + Math.sin(time * mb.speed[2] + mb.phase[2]) * mb.orbitRadius[2];
+
+                // Calculate pulsating radius
+                mb.currentRadius = mb.baseRadius + Math.sin(time * mb.radiusSpeed + mb.radiusPhase) * (mb.baseRadius * 0.4);
+
+                // Flatten data for uniforms
+                positionsArray[i * 3 + 0] = mb.currentPos[0];
+                positionsArray[i * 3 + 1] = mb.currentPos[1];
+                positionsArray[i * 3 + 2] = mb.currentPos[2];
+                radiiArray[i] = mb.currentRadius;
+            }
+
+             // Update uniforms (only need to do this once per frame)
+             // For vec3 arrays, use uniform3fv. For float arrays, use uniform1fv.
+             gl.uniform3fv(metaballPositionsLocation, positionsArray);
+             gl.uniform1fv(metaballRadiiLocation, radiiArray);
+             gl.uniform1i(numMetaballsUniformLocation, numMetaballs); // Send the actual count
+        }
+
+
+        // --- Resize Handling ---
+        function resizeCanvasToDisplaySize(canvas) {
+            const displayWidth  = canvas.clientWidth;
+            const displayHeight = canvas.clientHeight;
+
+            // Check if the canvas is not the same size.
+            if (canvas.width  !== displayWidth || canvas.height !== displayHeight) {
+                // Make the canvas the same size
+                canvas.width  = displayWidth;
+                canvas.height = displayHeight;
+                return true; // Indicate resize happened
+            }
+            return false;
+        }
+
+        // --- Render Loop ---
+        let startTime = performance.now();
+
+        function render(now) {
+            // Calculate elapsed time in seconds
+            const time = (now - startTime) * 0.001;
+
+            // Resize canvas and viewport if necessary
+            if (resizeCanvasToDisplaySize(gl.canvas)) {
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            }
+
+            // --- Clear and Prepare ---
+            // No need to clear color/depth for full-screen shader rendering unless blending
+            // gl.clearColor(0, 0, 0, 0);
+            // gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // --- Use Program ---
+            gl.useProgram(program);
+
+            // --- Enable Attributes ---
+            gl.enableVertexAttribArray(positionAttributeLocation);
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+            // 2 components per iteration, type FLOAT, normalize = false, stride = 0, offset = 0
+            gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+            // --- Update Uniforms ---
+            gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+            gl.uniform1f(timeUniformLocation, time);
+
+            // Update metaball positions and radii based on time
+            updateMetaballs(time); // This function also sends the uniforms
+
+            // --- Draw the Quad ---
+            gl.drawArrays(gl.TRIANGLES, 0, 6); // 6 vertices for the two triangles
+
+            // --- Request Next Frame ---
+            requestAnimationFrame(render);
+        }
+
+        // --- Start the Simulation ---
+        initializeMetaballs();
+        requestAnimationFrame(render);
+
+    </script>
+
+    <!-- Optional section for notes -->
+    <section id="notes" style="position: absolute; bottom: 10px; left: 10px; color: #555; font-family: sans-serif; font-size: 10px; display: none;">
+        <!-- Developer Notes:
+        - Ray Marching: Iteratively steps along a ray, querying the scene SDF at each point.
+        - SDF (Signed Distance Function): `mapScene` calculates the shortest distance to any object.
+        - Metaballs: Achieved by using `sdSphere` for individual spheres and `smin` (smooth minimum) to blend their SDFs, creating the organic merging effect.
+        - Coloring: `psychedelicColor` uses time, position, and normal to generate shifting, vibrant colors. Includes basic diffuse lighting.
+        - Animation: JavaScript updates `u_time` and metaball positions/radii (`u_metaballPositions`, `u_metaballRadii`) each frame using trigonometric functions for smooth, looping motion.
+        - Optimization: Keeping `MAX_STEPS` reasonable is key. The polynomial `smin` is often faster than the exponential version. Normal calculation uses central differences.
+        - Camera: Simple static camera looking down the Z-axis, with ray directions calculated based on screen coordinates. Added a subtle dolly animation.
+        -->
+    </section>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { border: 1px solid #444; background-color: #000; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+<canvas id="gameCanvas" width="512" height="512"></canvas>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const GRAVITY = 100; // px/s²
+    let particles = [];
+    let lastTime = 0;
+    let launchTimer = 0;
+
+    class Particle {
+        constructor(x, y, vx, vy, color, size, lifespan) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.color = color;
+            this.size = size;
+            this.lifespan = lifespan; // in seconds
+            this.age = 0;
+        }
+
+        update(dt) {
+            this.vy += GRAVITY * dt;
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.age += dt;
+        }
+
+        draw(ctx) {
+            const alpha = 1 - this.age / this.lifespan;
+            ctx.fillStyle = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        isAlive() {
+            return this.age < this.lifespan;
+        }
+    }
+
+    class Rocket extends Particle {
+        constructor() {
+            const x = W / 2 + (Math.random() - 0.5) * 100;
+            const y = H;
+            const vx = (Math.random() - 0.5) * 30;
+            const vy = -200 - Math.random() * 100;
+            const color = { r: 255, g: 255, b: 255 };
+            super(x, y, vx, vy, color, 2, 2); // Use lifespan as fuse
+            this.exploded = false;
+        }
+
+        update(dt) {
+            super.update(dt);
+            if (!this.exploded && (this.age > this.lifespan || this.vy >= -20)) {
+                this.explode();
+                this.exploded = true;
+            }
+        }
+
+        draw(ctx) {
+            if (!this.exploded) {
+                ctx.fillStyle = `rgb(255,255,255)`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        explode() {
+            const count = 30 + Math.floor(Math.random() * 50);
+            const hue = Math.floor(Math.random() * 360);
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * 2 * Math.PI;
+                const speed = Math.random() * 100 + 50;
+                const vx = Math.cos(angle) * speed;
+                const vy = Math.sin(angle) * speed;
+                const color = hslToRgb(hue / 360, 1, 0.5);
+                const size = 2 + Math.random() * 2;
+                const lifespan = 1 + Math.random() * 2;
+                particles.push(new Particle(this.x, this.y, vx, vy, color, size, lifespan));
+            }
+        }
+
+        isAlive() {
+            return !this.exploded;
+        }
+    }
+
+    function hslToRgb(h, s, l) {
+        let r, g, b;
+        if (s == 0) {
+            r = g = b = l;
+        } else {
+            const hue2rgb = (p, q, t) => {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1/6) return p + (q - p) * 6 * t;
+                if (t < 1/2) return q;
+                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                return p;
+            };
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+        return {
+            r: Math.round(r * 255),
+            g: Math.round(g * 255),
+            b: Math.round(b * 255)
+        };
+    }
+
+    function launchRocket() {
+        particles.push(new Rocket());
+    }
+
+    function gameLoop(timestamp) {
+        if (!lastTime) lastTime = timestamp;
+        const dt = (timestamp - lastTime) / 1000;
+        lastTime = timestamp;
+
+        launchTimer -= dt;
+        if (launchTimer <= 0) {
+            launchRocket();
+            launchTimer = 0.5 + Math.random() * 1.5;
+        }
+
+        // Update
+        for (let p of particles) p.update(dt);
+        particles = particles.filter(p => p.isAlive());
+
+        // Draw
+        ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+        ctx.fillRect(0, 0, W, H);
+
+        for (let p of particles) p.draw(ctx);
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    requestAnimationFrame(gameLoop);
+</script>
+<section id="notes">
+    This simulation uses two particle types: Rockets and ExplosionParticles (based on a shared Particle class). 
+    Rockets ascend and explode into multiple colorful fragments.
+    All physics is handled manually (gravity, explosion, fading, delta time).
+    Fading trails are simulated with a semi-transparent black rectangle over the canvas each frame.
+    Efficient array filtering is used to remove expired particles.
+</section>
+</body>
+</html>

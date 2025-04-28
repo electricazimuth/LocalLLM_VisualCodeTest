@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vehicle Collision Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #333; } /* Dark background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #666; background-color: #000; } /* Black canvas */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        class Vehicle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = (Math.random() - 0.5) * 4;
+                this.size = 20;
+                this.color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+                this.isActive = true;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(Math.atan2(this.vy, this.vx));
+                ctx.fillStyle = this.color;
+                ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+                ctx.restore();
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                this.wrap();
+            }
+
+            wrap() {
+                if (this.x < 0) this.x = width;
+                if (this.x > width) this.x = 0;
+                if (this.y < 0) this.y = height;
+                if (this.y > height) this.y = 0;
+            }
+        }
+
+        class ExplosionParticle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 6;
+                this.vy = (Math.random() - 0.5) * 6;
+                this.size = Math.random() * 3 + 1;
+                this.lifespan = 1;
+                this.color = `hsla(${Math.random() * 360}, 100%, 50%, ${Math.random() * 0.5 + 0.5})`;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.lifespan;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                this.lifespan -= deltaTime;
+            }
+        }
+
+        let simulationState = 'RUNNING';
+        let vehicles = [];
+        let explosionParticles = [];
+        let lastTime = 0;
+
+        function initializeVehicles() {
+            vehicles = [];
+            for (let i = 0; i < 10; i++) {
+                vehicles.push(new Vehicle());
+            }
+        }
+
+        function checkCollisions() {
+            for (let i = 0; i < vehicles.length; i++) {
+                if (!vehicles[i].isActive) continue;
+                for (let j = i + 1; j < vehicles.length; j++) {
+                    if (!vehicles[j].isActive) continue;
+                    if (isColliding(vehicles[i], vehicles[j])) {
+                        vehicles[i].isActive = false;
+                        vehicles[j].isActive = false;
+                        return { x: (vehicles[i].x + vehicles[j].x) / 2, y: (vehicles[i].y + vehicles[j].y) / 2 };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function isColliding(v1, v2) {
+            const dx = v1.x - v2.x;
+            const dy = v1.y - v2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < v1.size;
+        }
+
+        function createExplosion(x, y) {
+            explosionParticles = [];
+            for (let i = 0; i < 20; i++) {
+                explosionParticles.push(new ExplosionParticle(x, y));
+            }
+            setTimeout(() => {
+                simulationState = 'RESTARTING';
+            }, 3000);
+        }
+
+        function update(deltaTime) {
+            if (simulationState === 'RUNNING') {
+                vehicles.forEach(vehicle => vehicle.update(deltaTime));
+                const collision = checkCollisions();
+                if (collision) {
+                    createExplosion(collision.x, collision.y);
+                    simulationState = 'EXPLODING';
+                }
+            } else if (simulationState === 'EXPLODING') {
+                explosionParticles.forEach(particle => particle.update(deltaTime));
+                explosionParticles = explosionParticles.filter(particle => particle.lifespan > 0);
+                if (explosionParticles.length === 0) {
+                    simulationState = 'RESTARTING';
+                }
+            } else if (simulationState === 'RESTARTING') {
+                vehicles.forEach(vehicle => vehicle.isActive = false);
+                vehicles = vehicles.filter(vehicle => vehicle.isActive);
+                if (vehicles.length === 0) {
+                    initializeVehicles();
+                    simulationState = 'RUNNING';
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            if (simulationState === 'RUNNING') {
+                vehicles.forEach(vehicle => {
+                    if (vehicle.isActive) vehicle.draw();
+                });
+            } else if (simulationState === 'EXPLODING') {
+                explosionParticles.forEach(particle => particle.draw());
+                ctx.font = '48px Arial';
+                ctx.fillStyle = 'white';
+                ctx.fillText('BOOM!', width / 2 - 60, height / 2);
+            }
+        }
+
+        function animate(time) {
+            const deltaTime = (time - lastTime) / 1000;
+            lastTime = time;
+            update(deltaTime);
+            draw();
+            requestAnimationFrame(animate);
+        }
+
+        initializeVehicles();
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>

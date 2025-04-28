@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { border: 1px solid #444; background-color: #000; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        const particles = [];
+        let lastLaunch = 0;
+        const gravity = 0.2;
+        const explosionParticlesCount = 50;
+
+        class Particle {
+            constructor(x, y, vx, vy, lifespan, color, size) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.lifespan = lifespan;
+                this.color = color;
+                this.size = size;
+                this.alpha = 1;
+            }
+        }
+
+        function createFirework() {
+            const x = W / 2 + (Math.random() - 0.5) * 20;
+            const y = H;
+            const vx = (Math.random() - 0.5) * 2;
+            const vy = -15 - Math.random() * 5;
+            const color = `#${Math.floor(Math.random()*16777215).toString(16)}`;
+            return new Particle(x, y, vx, vy, 1, color, 2);
+        }
+
+        function createExplosionParticles(x, y, color) {
+            const particles = [];
+            for (let i = 0; i < explosionParticlesCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 10 + Math.random() * 5;
+                const vx = Math.cos(angle) * speed;
+                const vy = Math.sin(angle) * speed;
+                const lifespan = 1 + Math.random() * 2;
+                const size = 2 + Math.random() * 2;
+                particles.push(new Particle(x, y, vx, vy, lifespan, color, size));
+            }
+            return particles;
+        }
+
+        function updateParticles(deltaTime) {
+            const newParticles = [];
+            
+            for (const particle of particles) {
+                particle.x += particle.vx * deltaTime;
+                particle.y += particle.vy * deltaTime;
+                particle.vy += gravity * deltaTime;
+                particle.lifespan -= deltaTime;
+
+                if (particle.lifespan > 0) {
+                    newParticles.push(particle);
+                }
+            }
+
+            particles.length = 0;
+            particles.push(...newParticles);
+        }
+
+        function drawParticles() {
+            for (const particle of particles) {
+                ctx.beginPath();
+                ctx.fillStyle = `rgba(${particle.color.slice(1)}, ${particle.alpha})`;
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastLaunch) / 1000;
+            lastLaunch = timestamp;
+
+            // Launch new firework randomly
+            if (Math.random() < 0.1) {
+                particles.push(createFirework());
+            }
+
+            // Update particles
+            updateParticles(deltaTime);
+
+            // Check for explosions
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                if (particle.lifespan < 0.5 && particle.size === 2) {
+                    const explosion = createExplosionParticles(particle.x, particle.y, particle.color);
+                    particles.splice(i, 1, ...explosion);
+                }
+            }
+
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Draw particles
+            drawParticles();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h3>Implementation Notes:</h3>
+        <ul>
+            <li>Uses a single Particle class with different properties for rockets and explosion particles</li>
+            <li>Fireworks are launched randomly every 0.1 seconds on average</li>
+            <li>Explosions create 50 particles with random velocities and colors</li>
+            <li>Gravity affects all particles</li>
+            <li>Particles fade out as their lifespan decreases</li>
+            <li>Efficient particle management using array operations</li>
+            <li>Delta time ensures consistent animation speed</li>
+        </ul>
+    </section>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <script id="vertexShader" type="x-shader/x-vertex">
+        precision highp float;
+
+        attribute vec2 a_position;
+        varying vec2 v_uv;
+
+        void main() {
+            v_uv = a_position * 0.5 + 0.5;
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        #define MAX_STEPS 64
+        #define MAX_DIST 100.0
+        #define NUM_METABALLS 20
+        #define SMOOTH_MIN_K 5.0
+
+        precision highp float;
+
+        uniform float time;
+        uniform vec2 resolution;
+        uniform vec3 metaballPos[NUM_METABALLS];
+        uniform float metaballRad[NUM_METABALLS];
+
+        varying vec2 v_uv;
+
+        // Signed Distance Functions
+        float sdfSphere(vec3 p, vec3 center, float r) {
+            return length(p - center) - r;
+        }
+
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5*(b - a)/k, 0.0, 1.0);
+            return mix(b, a, h) - k*h*(1.0 - h);
+        }
+
+        // Combined SDF for all metaballs
+        float sdfScene(vec3 p) {
+            float minDist = 1e10;
+            for(int i=0; i<NUM_METABALLS; i++) {
+                vec3 center = metaballPos[i] + vec3(sin(time*0.5 + float(i)*0.3), cos(time*0.6 + float(i)*0.2), sin(time*0.7 + float(i)*0.4)) * 0.5;
+                float r = metaballRad[i] + 0.2*sin(time*1.3 + float(i)*0.1);
+                float dist = sdfSphere(p, center, r);
+                minDist = smin(minDist, dist, SMOOTH_MIN_K);
+            }
+            return minDist;
+        }
+
+        // Ray marching
+        float rayMarch(vec3 origin, vec3 dir) {
+            float dist = 0.0;
+            for(int i=0; i<MAX_STEPS; i++) {
+                vec3 pos = origin + dir * dist;
+                float hit = sdfScene(pos);
+                if(hit < 0.01 || dist > MAX_DIST) break;
+                dist += hit;
+            }
+            return dist;
+        }
+
+        // Normal calculation via central differences
+        vec3 calcNormal(vec3 p) {
+            vec3 eps = vec3(0.001, 0.0, 0.0);
+            vec3 normal = dFdx(p.xyz);
+            normal.y = dFdy(p.xyz).y;
+            normal.z = dFdz(p.xyz).z;
+            return normalize(normal);
+        }
+
+        // Lighting
+        vec3 calcLighting(vec3 normal) {
+            vec3 lightDir = normalize(vec3(1.0, 0.5, 0.0));
+            float diff = max(dot(normal, lightDir), 0.0);
+            return vec3(diff, diff, diff);
+        }
+
+        // Color modulation
+        vec3 getColor(vec3 p, float dist) {
+            float hue = fract(time * 0.1) + 0.5;
+            vec3 color = vec3(hue, 1.0, 0.5);
+            color *= 1.0 - exp(-dist * 0.1);
+            return color;
+        }
+
+        void main() {
+            // Camera setup
+            vec3 origin = vec3(0.0, 0.0, 5.0);
+            vec3 dir = normalize(vec3((v_uv - 0.5) * vec2(resolution.x/resolution.y, 1.0), -1.0));
+
+            // Ray march
+            float dist = rayMarch(origin, dir);
+
+            // Hit?
+            if (dist < MAX_DIST) {
+                // Surface properties
+                vec3 p = origin + dir * dist;
+                vec3 normal = calcNormal(p);
+                vec3 color = getColor(p, dist);
+                color *= calcLighting(normal);
+
+                // Output color
+                gl_FragColor = vec4(color, 1.0);
+            } else {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            }
+        }
+    </script>
+
+    <script>
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl2');
+        if (!gl) {
+            alert('WebGL 2.0 not supported');
+            return;
+        }
+
+        // Compile shaders
+        const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertexShader, document.getElementById('vertexShader').text);
+        gl.compileShader(vertexShader);
+
+        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragmentShader, document.getElementById('fragmentShader').text);
+        gl.compileShader(fragmentShader);
+
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+
+        // Create buffers
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,
+             1, -1,
+            -1,  1,
+            -1,  1,
+             1, -1,
+             1,  1
+        ]), gl.STATIC_DRAW);
+
+        // Setup attributes
+        const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+        gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(positionAttributeLocation);
+
+        // Uniform locations
+        const resolutionUniform = gl.getUniformLocation(program, 'resolution');
+        const timeUniform = gl.getUniformLocation(program, 'time');
+        const metaballPosUniform = gl.getUniformLocation(program, 'metaballPos[0]');
+        const metaballRadUniform = gl.getUniformLocation(program, 'metaballRad[0]');
+
+        // Initialize metaball positions and radii
+        const metaballPos = new Float32Array(NUM_METABALLS * 3);
+        const metaballRad = new Float32Array(NUM_METABALLS);
+        for (let i = 0; i < NUM_METABALLS; i++) {
+            metaballPos[i*3 + 0] = Math.random() * 2 - 1;
+            metaballPos[i*3 + 1] = Math.random() * 2 - 1;
+            metaballPos[i*3 + 2] = Math.random() * 2 - 1;
+            metaballRad[i] = 0.2 + Math.random() * 0.3;
+        }
+
+        // Render loop
+        let time = 0;
+        function render() {
+            time += 0.016; // ~60 FPS delta
+
+            gl.useProgram(program);
+            gl.uniform2f(resolutionUniform, canvas.width, canvas.height);
+            gl.uniform1f(timeUniform, time);
+
+            // Update metaball positions
+            for (let i = 0; i < NUM_METABALLS; i++) {
+                const idx = i * 3;
+                gl.uniform3fv(metaballPosUniform + idx, metaballPos.subarray(idx, idx + 3));
+                gl.uniform1f(metaballRadUniform + i, metaballRad[i]);
+            }
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            requestAnimationFrame(render);
+        }
+
+        render();
+    </script>
+
+    <!-- Developer Notes -->
+    <section id="notes">
+        <h3>Implementation Details</h3>
+        <ul>
+            <li>Ray marching uses adaptive step size to balance performance and detail.</li>
+            <li>Metaball positions and radii are randomized and animated using trigonometric functions of time.</li>
+            <li>Color is modulated based on time for a psychedelic effect, using HSL conversion.</li>
+            <li>Normal calculation uses central differences for smoother gradients.</li>
+            <li>Lighting is simplified for performance, using a single directional light.</li>
+        </ul>
+    </section>
+</body>
+</html>

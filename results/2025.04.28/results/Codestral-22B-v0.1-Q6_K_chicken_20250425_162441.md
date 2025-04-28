@@ -1,0 +1,128 @@
+Here is a simple implementation of the "Happy Mrs. Chicken Simulation Challenge". This implementation uses classes for the `Chicken` and `Egg` objects, and it includes basic wandering behavior for the chicken, egg-laying action, and boundary handling. The chicken's visual representation is oriented to face its direction of movement.
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chicken Simulation</title>
+    <style>
+        body { margin: 10px; overflow: hidden; background-color: #eee; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #999; background-color: #90ee90; } /* Light green grass background */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        let lastTime = 0;
+        let eggs = [];
+
+        class Chicken {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.speed = 1;
+                this.angle = 0;
+                this.timer = 0;
+                this.layingTime = 1000; // 1 second
+            }
+
+            update(deltaTime) {
+                if (this.timer <= 0) {
+                    // Wandering behavior
+                    this.angle += Math.random() * 0.4 - 0.2;
+                    this.x += Math.cos(this.angle) * this.speed;
+                    this.y += Math.sin(this.angle) * this.speed;
+
+                    // Boundary handling
+                    if (this.x < 0) this.x = 0;
+                    if (this.x > canvas.width) this.x = canvas.width;
+                    if (this.y < 0) this.y = 0;
+                    if (this.y > canvas.height) this.y = canvas.height;
+
+                    // Egg laying action
+                    if (Math.random() < 0.005) {
+                        this.timer = this.layingTime;
+                        eggs.push(new Egg(this.x, this.y));
+                    }
+                } else {
+                    // Laying state
+                    this.timer -= deltaTime;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Chicken body
+                ctx.beginPath();
+                ctx.arc(0, 0, 10, 0, Math.PI * 2);
+                ctx.fillStyle = 'brown';
+                ctx.fill();
+
+                // Chicken beak
+                ctx.beginPath();
+                ctx.moveTo(10, -5);
+                ctx.lineTo(20, 0);
+                ctx.lineTo(10, 5);
+                ctx.closePath();
+                ctx.fillStyle = 'orange';
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        class Egg {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, 5, 10, 0, 0, Math.PI * 2);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+            }
+        }
+
+        const chicken = new Chicken(canvas.width / 2, canvas.height / 2);
+
+        function animate(timeStamp) {
+            const deltaTime = timeStamp - lastTime;
+            lastTime = timeStamp;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            chicken.update(deltaTime);
+            chicken.draw();
+
+            eggs.forEach((egg, index) => {
+                egg.draw();
+                if (timeStamp - egg.timestamp > 5000) { // Remove egg after 5 seconds
+                    eggs.splice(index, 1);
+                }
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        animate(0);
+    </script>
+</body>
+</html>
+```
+
+This implementation should meet all the functional and desirable requirements mentioned in the challenge description.
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Codestral-22B-v0.1-Q6_K.gguf -->
+<!-- Prompt: chicken.md -->
+<!-- Generation Time: 116.66s -->
+<!-- Fallback Used: False -->

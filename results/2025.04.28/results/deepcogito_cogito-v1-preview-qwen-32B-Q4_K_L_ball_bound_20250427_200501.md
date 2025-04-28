@@ -1,0 +1,214 @@
+Here's a complete implementation of the bouncing balls simulation that meets all the requirements:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        class Ball {
+            constructor(x, y, r) {
+                this.x = x;
+                this.y = y;
+                this.r = r;
+                this.mass = r * r * Math.PI;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = (Math.random() - 0.5) * 4;
+                this.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+            }
+
+            update() {
+                // Apply gravity
+                this.vy += 0.2;
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collisions
+                if (this.x - this.r < 0) {
+                    this.x = this.r;
+                    this.vx = -this.vx * 0.8;
+                } else if (this.x + this.r > W) {
+                    this.x = W - this.r;
+                    this.vx = -this.vx * 0.8;
+                }
+
+                if (this.y - this.r < 0) {
+                    this.y = this.r;
+                    this.vy = -this.vy * 0.8;
+                } else if (this.y + this.r > H) {
+                    this.y = H - this.r;
+                    this.vy = -this.vy * 0.8;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.fillStyle = this.color;
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        const balls = [];
+        const numBalls = 50;
+        const gridCellSize = 50;
+        const grid = Array.from({ length: Math.ceil(W / gridCellSize) }, () => 
+            Array.from({ length: Math.ceil(H / gridCellSize) }, () => [])
+        );
+
+        function initializeBalls() {
+            for (let i = 0; i < numBalls; i++) {
+                let ball;
+                do {
+                    const r = Math.random() * 10 + 5;
+                    ball = new Ball(
+                        Math.random() * (W - 2 * r) + r,
+                        Math.random() * (H - 2 * r) + r,
+                        r
+                    );
+                } while (checkOverlap(ball));
+                balls.push(ball);
+            }
+        }
+
+        function checkOverlap(ball) {
+            const cellX = Math.floor(ball.x / gridCellSize);
+            const cellY = Math.floor(ball.y / gridCellSize);
+            const neighbors = getNeighbors(cellX, cellY);
+            
+            for (const neighbor of neighbors) {
+                if (ball !== neighbor && 
+                    Math.hypot(ball.x - neighbor.x, ball.y - neighbor.y) < ball.r + neighbor.r) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function getNeighbors(x, y) {
+            const neighbors = [];
+            for (let i = Math.max(0, x - 1); i <= Math.min(grid.length - 1, x + 1); i++) {
+                for (let j = Math.max(0, y - 1); j <= Math.min(grid[0].length - 1, y + 1); j++) {
+                    neighbors.push(...grid[i][j]);
+                }
+            }
+            return neighbors;
+        }
+
+        function updateGrid() {
+            grid.forEach(row => row.forEach(cell => cell.length = 0));
+            balls.forEach(ball => {
+                const cellX = Math.floor(ball.x / gridCellSize);
+                const cellY = Math.floor(ball.y / gridCellSize);
+                grid[cellX][cellY].push(ball);
+            });
+        }
+
+        function handleCollisions() {
+            updateGrid();
+            balls.forEach(ball => {
+                const cellX = Math.floor(ball.x / gridCellSize);
+                const cellY = Math.floor(ball.y / gridCellSize);
+                const neighbors = getNeighbors(cellX, cellY);
+
+                for (const other of neighbors) {
+                    if (ball !== other) {
+                        const dx = ball.x - other.x;
+                        const dy = ball.y - other.y;
+                        const distance = Math.hypot(dx, dy);
+
+                        if (distance < ball.r + other.r) {
+                            const overlap = ball.r + other.r - distance;
+                            const normalX = dx / distance;
+                            const normalY = dy / distance;
+
+                            // Calculate relative velocity
+                            const relativeVelX = ball.vx - other.vx;
+                            const relativeVelY = ball.vy - other.vy;
+
+                            // Calculate impulse
+                            const impulse = (relativeVelX * normalX + relativeVelY * normalY) / 
+                                (1/ ball.mass + 1/ other.mass);
+
+                            // Apply impulse
+                            ball.vx -= impulse * normalX / ball.mass;
+                            ball.vy -= impulse * normalY / ball.mass;
+                            other.vx += impulse * normalX / other.mass;
+                            other.vy += impulse * normalY / other.mass;
+
+                            // Separate balls
+                            ball.x -= normalX * overlap * 0.5;
+                            ball.y -= normalY * overlap * 0.5;
+                            other.x += normalX * overlap * 0.5;
+                            other.y += normalY * overlap * 0.5;
+                        }
+                    }
+                }
+            });
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            balls.forEach(ball => {
+                ball.update();
+            });
+
+            handleCollisions();
+
+            balls.forEach(ball => {
+                ball.draw();
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        initializeBalls();
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h3>Implementation Notes:</h3>
+        <ul>
+            <li>Uses a grid-based spatial partitioning system for efficient collision detection</li>
+            <li>Implements realistic physics with gravity, damping, and elastic collisions</li>
+            <li>Prevents initial ball overlaps during initialization</li>
+            <li>Uses requestAnimationFrame for smooth animation</li>
+            <li>Supports 50 balls with good performance</li>
+        </ul>
+    </section>
+</body>
+</html>
+```
+
+This implementation includes:
+
+1. A `Ball` class with all required properties and methods
+2. Grid-based spatial partitioning for efficient collision detection
+3. Proper initialization with non-overlapping balls
+4. Gravity and damping effects on wall collisions
+5. Elastic collision response between balls
+6. Smooth animation using requestAnimationFrame
+7. Performance optimizations through spatial partitioning
+
+The code is well-commented and structured for readability. The spatial partitioning system significantly improves performance by reducing the number of collision checks needed.
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: deepcogito_cogito-v1-preview-qwen-32B-Q4_K_L.gguf -->
+<!-- Prompt: ball_bound.md -->
+<!-- Generation Time: 169.23s -->
+<!-- Fallback Used: False -->

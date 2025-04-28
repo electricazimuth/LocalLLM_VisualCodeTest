@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #111; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas { 
+            border: 1px solid #444; 
+            background-color: #000; 
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas size to fill the window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Constants
+        const GRAVITY = 0.15;
+        const MIN_PARTICLES_PER_EXPLOSION = 40;
+        const MAX_PARTICLES_PER_EXPLOSION = 80;
+        const MIN_LAUNCH_INTERVAL = 500; // ms
+        const MAX_LAUNCH_INTERVAL = 2000; // ms
+        const EXPLOSION_HEIGHT_MIN = 0.2; // % of canvas height
+        const EXPLOSION_HEIGHT_MAX = 0.6; // % of canvas height
+        const MIN_ROCKET_SPEED = 8;
+        const MAX_ROCKET_SPEED = 15;
+        const PARTICLE_LIFESPAN_MIN = 1000; // ms
+        const PARTICLE_LIFESPAN_MAX = 2000; // ms
+        const PARTICLE_SIZE_MIN = 2;
+        const PARTICLE_SIZE_MAX = 5;
+        const ROCKET_TRAIL_LENGTH = 5;
+
+        // Utility functions
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function randomInt(min, max) {
+            return Math.floor(random(min, max + 1));
+        }
+
+        function getRandomColor() {
+            const colors = [
+                '#FF5252', '#FF4081', '#E040FB', '#7C4DFF', '#536DFE',
+                '#448AFF', '#40C4FF', '#18FFFF', '#64FFDA', '#69F0AE',
+                '#B2FF59', '#EEFF41', '#FFFF00', '#FFD740', '#FFAB40',
+                '#FF6E40'
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        // Particle base class
+        class Particle {
+            constructor(x, y, vx, vy, size, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = size;
+                this.color = color;
+                this.alpha = 1;
+            }
+
+            update(deltaTime) {
+                // To be implemented by subclasses
+            }
+
+            draw(ctx) {
+                // To be implemented by subclasses
+            }
+        }
+
+        // Rocket particle
+        class Rocket extends Particle {
+            constructor(x, y, targetY, speed) {
+                const angle = random(-0.2, 0.2); // Slight angle variation
+                const vx = Math.sin(angle) * speed * 0.5;
+                const vy = -speed; // Negative is up
+                
+                super(x, y, vx, vy, 3, '#FFFFFF');
+                this.targetY = targetY;
+                this.trail = [];
+                this.exploded = false;
+            }
+
+            update(deltaTime) {
+                // Update position based on velocity
+                this.x += this.vx * (deltaTime / 16);
+                this.y += this.vy * (deltaTime / 16);
+                
+                // Apply gravity
+                this.vy += GRAVITY * (deltaTime / 16);
+                
+                // Update trail
+                this.trail.unshift({ x: this.x, y: this.y, alpha: 1 });
+                if (this.trail.length > ROCKET_TRAIL_LENGTH) {
+                    this.trail.pop();
+                }
+                
+                // Update trail alphas
+                this.trail.forEach(point => {
+                    point.alpha -= 0.2 * (deltaTime / 16);
+                    if (point.alpha < 0) point.alpha = 0;
+                });
+                
+                // Check if reached target height or vy is positive (starting to fall)
+                if (this.y <= this.targetY || this.vy >= 0) {
+                    return true; // Signal to explode
+                }
+                
+                return false;
+            }
+
+            draw(ctx) {
+                // Draw trail
+                this.trail.forEach((point, index) => {
+                    const size = this.size * (1 - index / ROCKET_TRAIL_LENGTH);
+                    ctx.globalAlpha = point.alpha;
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                
+                // Draw rocket
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Explosion particle
+        class ExplosionParticle extends Particle {
+            constructor(x, y, vx, vy, size, color, lifespan) {
+                super(x, y, vx, vy, size, color);
+                this.maxLifespan = lifespan;
+                this.lifespan = lifespan;
+            }
+
+            update(deltaTime) {
+                // Update position based on velocity
+                this.x += this.vx * (deltaTime / 16);
+                this.y += this.vy * (deltaTime / 16);
+                
+                // Apply gravity
+                this.vy += GRAVITY * (deltaTime / 16);
+                
+                // Update lifespan
+                this.lifespan -= deltaTime;
+                this.alpha = this.lifespan / this.maxLifespan;
+                
+                // Check if lifespan is over
+                return this.lifespan <= 0;
+            }
+
+            draw(ctx) {
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Game state
+        let particles = [];
+        let lastTime = 0;
+        let lastLaunchTime = 0;
+        let nextLaunchDelay = random(MIN_LAUNCH_INTERVAL, MAX_LAUNCH_INTERVAL);
+
+        // Launch a new rocket
+        function launchRocket() {
+            const x = canvas.width / 2 + random(-50, 50);
+            const y = canvas.height;
+            const targetY = canvas.height * (EXPLOSION_HEIGHT_MIN + random(0, EXPLOSION_HEIGHT_MAX - EXPLOSION_HEIGHT_MIN));
+            const speed = random(MIN_ROCKET_SPEED, MAX_ROCKET_SPEED);
+            
+            particles.push(new Rocket(x, y, targetY, speed));
+            
+            // Schedule next launch
+            nextLaunchDelay = random(MIN_LAUNCH_INTERVAL, MAX_LAUNCH_INTERVAL);
+        }
+
+        // Explode a rocket
+        function explodeRocket(rocket) {
+            const numParticles = randomInt(MIN_PARTICLES_PER_EXPLOSION, MAX_PARTICLES_PER_EXPLOSION);
+            const baseColor = getRandomColor();
+            
+            for (let i = 0; i < numParticles; i++) {
+                // Calculate random velocity for explosion particles
+                const angle = random(0, Math.PI * 2);
+                const speed = random(1, 5);
+                const vx = Math.cos(angle) * speed;
+                const vy = Math.sin(angle) * speed - 2; // Initial upward boost
+                
+                // Vary the color slightly
+                const color = i % 5 === 0 ? getRandomColor() : baseColor;
+                const size = random(PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX);
+                const lifespan = random(PARTICLE_LIFESPAN_MIN, PARTICLE_LIFESPAN_MAX);
+                
+                particles.push(new ExplosionParticle(
+                    rocket.x, 
+                    rocket.y, 
+                    vx, 
+                    vy, 
+                    size, 
+                    color, 
+                    lifespan
+                ));
+            }
+        }
+
+        // Main game loop
+        function gameLoop(timestamp) {
+            // Calculate delta time
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Launch new rockets
+            if (timestamp - lastLaunchTime > nextLaunchDelay) {
+                launchRocket();
+                lastLaunchTime = timestamp;
+            }
+            
+            // Update and draw particles
+            const newParticles = [];
+            
+            for (let i = 0; i < particles.length; i++) {
+                const particle = particles[i];
+                const shouldRemove = particle.update(deltaTime);
+                
+                if (shouldRemove) {
+                    if (particle instanceof Rocket) {
+                        explodeRocket(particle);
+                    }
+                } else {
+                    newParticles.push(particle);
+                }
+                
+                // Draw the particle
+                particle.draw(ctx);
+            }
+            
+            // Replace the particles array with the updated one
+            particles = newParticles;
+            
+            // Continue the loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This fireworks simulation features:
+        <ul>
+            <li>Autonomous launching of firework rockets at random intervals</li>
+            <li>Realistic physics with gravity affecting both rockets and explosion particles</li>
+            <li>Efficient particle management using class-based structure</li>
+            <li>Smooth animation with delta time calculation</li>
+            <li>Randomized colors, sizes, and explosion patterns</li>
+            <li>Responsive canvas that adjusts to window size</li>
+        </ul>
+    </section>
+</body>
+</html>

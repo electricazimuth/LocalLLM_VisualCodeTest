@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Constants
+        const numBalls = 50;
+        const minRadius = 10;
+        const maxRadius = 30;
+        const dampingFactor = 0.9;
+        const gravity = 0.2;
+        const cellSize = 100;
+        const numCols = Math.ceil(W / cellSize);
+        const numRows = Math.ceil(H / cellSize);
+        const grid = Array(numCols).fill().map(() => Array(numRows).fill([]));
+
+        // Ball class
+        class Ball {
+            constructor(x, y, r, color) {
+                this.x = x;
+                this.y = y;
+                this.r = r;
+                this.vx = Math.random() * 10 - 5; // Random initial velocity
+                this.vy = Math.random() * 10 - 5;
+                this.mass = r * r; // Mass proportional to radius squared
+                this.color = color;
+            }
+        }
+
+        // Helper functions
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        function getCells(ball) {
+            const minX = Math.floor((ball.x - ball.r) / cellSize);
+            const maxX = Math.floor((ball.x + ball.r) / cellSize);
+            const minY = Math.floor((ball.y - ball.r) / cellSize);
+            const maxY = Math.floor((ball.y + ball.r) / cellSize);
+            const cells = [];
+            for (let x = minX; x <= maxX; x++) {
+                for (let y = minY; y <= maxY; y++) {
+                    if (x >= 0 && x < numCols && y >= 0 && y < numRows) {
+                        cells.push({ x, y });
+                    }
+                }
+            }
+            return cells;
+        }
+
+        // Initialize balls
+        const balls = [];
+        for (let i = 0; i < numBalls; i++) {
+            let x = Math.random() * (W - 2 * maxRadius) + maxRadius;
+            let y = Math.random() * (H - 2 * maxRadius) + maxRadius;
+            let r = Math.random() * (maxRadius - minRadius) + minRadius;
+            let color = getRandomColor();
+            balls.push(new Ball(x, y, r, color));
+        }
+
+        // Grid update
+        function updateGrid() {
+            grid.forEach(row => row.fill([]));
+            for (const ball of balls) {
+                const cells = getCells(ball);
+                for (const { x, y } of cells) {
+                    grid[x][y].push(ball);
+                }
+            }
+        }
+
+        // Physics functions
+        function applyGravity() {
+            for (const ball of balls) {
+                ball.vy += gravity;
+            }
+        }
+
+        function updatePositions() {
+            for (const ball of balls) {
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+            }
+        }
+
+        function handleWallCollisions() {
+            for (const ball of balls) {
+                if (ball.x - ball.r < 0 || ball.x + ball.r > W) {
+                    ball.vx = -ball.vx * dampingFactor;
+                    if (ball.x - ball.r < 0) {
+                        ball.x = ball.r;
+                    } else {
+                        ball.x = W - ball.r;
+                    }
+                }
+                if (ball.y - ball.r < 0 || ball.y + ball.r > H) {
+                    ball.vy = -ball.vy * dampingFactor;
+                    if (ball.y - ball.r < 0) {
+                        ball.y = ball.r;
+                    } else {
+                        ball.y = H - ball.r;
+                    }
+                }
+            }
+        }
+
+        function checkCollision(ball1, ball2) {
+            const dx = ball1.x - ball2.x;
+            const dy = ball1.y - ball2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const sumRadii = ball1.r + ball2.r;
+            if (distance <= sumRadii) {
+                const normalX = dx / distance;
+                const normalY = dy / distance;
+                const relativeVelocity = (ball1.vx - ball2.vx) * normalX + (ball1.vy - ball2.vy) * normalY;
+                if (relativeVelocity > 0) return; // Moving apart
+
+                // Calculate impulse
+                const e = dampingFactor; // Coefficient of restitution (damping)
+                const impulse = (e * relativeVelocity) / (1/ball1.mass + 1/ball2.mass);
+
+                // Apply impulse
+                const j = impulse;
+                const impulseX = j * normalX;
+                const impulseY = j * normalY;
+                ball1.vx -= impulseX / ball1.mass;
+                ball1.vy -= impulseY / ball1.mass;
+                ball2.vx += impulseX / ball2.mass;
+                ball2.vy += impulseY / ball2.mass;
+
+                // Move balls apart
+                const overlap = sumRadii - distance;
+                const moveX = overlap * normalX * 0.5;
+                const moveY = overlap * normalY * 0.5;
+                ball1.x -= moveX;
+                ball1.y -= moveY;
+                ball2.x += moveX;
+                ball2.y += moveY;
+            }
+        }
+
+        function detectCollisions() {
+            for (let x = 0; x < numCols; x++) {
+                for (let y = 0; y < numRows; y++) {
+                    const cell = grid[x][y];
+                    for (let dx = -1; dx <= 1; dx++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if (nx >= 0 && nx < numCols && ny >= 0 && ny < numRows) {
+                                const neighbor = grid[nx][ny];
+                                for (const ball1 of cell) {
+                                    for (const ball2 of neighbor) {
+                                        if (ball1 !== ball2) {
+                                            checkCollision(ball1, ball2);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Drawing function
+        function drawBalls() {
+            for (const ball of balls) {
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+                ctx.fillStyle = ball.color;
+                ctx.fill();
+            }
+        }
+
+        // Animation loop
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+            applyGravity();
+            updatePositions();
+            handleWallCollisions();
+            updateGrid();
+            detectCollisions();
+            drawBalls();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This simulation uses a grid-based collision detection optimization to improve performance with 50+ balls.
+        Each ball's mass is proportional to its radius squared, and collisions include damping.
+    </section>
+</body>
+</html>

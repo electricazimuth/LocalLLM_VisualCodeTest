@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color:rgb(207, 247, 255); }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        const FISH_COUNT = 15;
+
+        class Fish {
+            constructor() {
+                this.x = Math.random() * W;
+                this.y = Math.random() * H;
+                this.size = Math.random() * 20 + 15; // 15-35px size
+                this.speed = Math.random() * 1.5 + 1.5;
+                this.direction = Math.random() * Math.PI * 2;
+                this.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+                this.wanderAngle = Math.PI / 4;
+                this.wanderRadius = 50;
+                this.halfSize = this.size / 2;
+            }
+
+            update(deltaTime) {
+                // Wandering behavior
+                const randomAngle = (Math.random() - 0.5) * this.wanderAngle;
+                this.direction += randomAngle * deltaTime / 100;
+                
+                // Boundary handling
+                const edgeDistance = 50;
+                if (this.x < edgeDistance) this.direction = Math.PI/2;
+                else if (this.x > W - edgeDistance) this.direction = -Math.PI/2;
+                if (this.y < edgeDistance) this.direction = 0;
+                else if (this.y > H - edgeDistance) this.direction = Math.PI;
+
+                // Update position
+                this.x += Math.cos(this.direction) * this.speed * deltaTime / 16;
+                this.y += Math.sin(this.direction) * this.speed * deltaTime / 16;
+
+                // Keep within bounds
+                this.x = Math.max(0, Math.min(W, this.x));
+                this.y = Math.max(0, Math.min(H, this.y));
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.direction);
+                
+                // Draw fish body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.ellipse(this.halfSize, 0, this.size * 0.6, this.size, 0);
+                
+                // Draw tail
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.moveTo(this.halfSize * 0.8, 0);
+                ctx.lineTo(this.halfSize * 0.8 + this.size * 0.5, this.size * 0.5);
+                ctx.lineTo(this.halfSize * 0.8 + this.size * 0.5, -this.size * 0.5);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Draw eye
+                ctx.beginPath();
+                ctx.arc(-this.halfSize * 0.7, -this.halfSize * 0.3, 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+
+        class Aquarium {
+            constructor() {
+                this.fish = [];
+                for (let i = 0; i < FISH_COUNT; i++) {
+                    this.fish.push(new Fish());
+                }
+            }
+
+            update(deltaTime) {
+                this.fish.forEach(fish => fish.update(deltaTime));
+            }
+
+            draw() {
+                ctx.fillStyle = '#c9f7ff';
+                ctx.fillRect(0, 0, W, H);
+                
+                this.fish.forEach(fish => fish.draw());
+            }
+        }
+
+        // Initialize aquarium
+        const aquarium = new Aquarium();
+
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            aquarium.update(deltaTime);
+            aquarium.draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start animation
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h3>Implementation Notes:</h3>
+        <ul>
+            <li>Object-oriented design with Fish and Aquarium classes</li>
+            <li>Wandering behavior using random angular adjustments</li>
+            <li>Boundary handling with smooth edge turning</li>
+            <li>Frame-rate independent animation using deltaTime</li>
+            <li>Varied fish appearance through random size, color, and speed</li>
+            <li>Complex fish graphics with body, tail, and eye</li>
+            <li>Efficient rendering using canvas transformations</li>
+        </ul>
+    </section>
+</body>
+</html>

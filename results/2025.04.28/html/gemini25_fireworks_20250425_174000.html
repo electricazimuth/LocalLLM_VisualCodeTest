@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Autonomous Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; } /* Dark background */
+        canvas { display: block; margin: 0 auto; background-color: #000; } /* Dark canvas bg */
+        #notes {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #555;
+            font-family: sans-serif;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Configuration ---
+        let W = window.innerWidth;
+        let H = window.innerHeight;
+        canvas.width = W;
+        canvas.height = H;
+
+        const GRAVITY = 0.08; // Adjusted for visual appeal
+        const LAUNCH_INTERVAL_MIN = 0.5; // seconds
+        const LAUNCH_INTERVAL_MAX = 1.5; // seconds
+        const ROCKET_VELOCITY_MIN = -11; // pixels per frame at 60fps equivalent
+        const ROCKET_VELOCITY_MAX = -15;
+        const ROCKET_TARGET_ALTITUDE_MIN = 0.25; // % of height
+        const ROCKET_TARGET_ALTITUDE_MAX = 0.5; // % of height
+        const EXPLOSION_PARTICLE_COUNT_MIN = 60;
+        const EXPLOSION_PARTICLE_COUNT_MAX = 100;
+        const EXPLOSION_SPEED_MAX = 8; // Max initial speed of explosion particles
+        const EXPLOSION_LIFESPAN_MIN = 1.5; // seconds
+        const EXPLOSION_LIFESPAN_MAX = 3.0; // seconds
+        const PARTICLE_SIZE_MIN = 2;
+        const PARTICLE_SIZE_MAX = 4;
+        const FRICTION = 0.98; // Air resistance for explosion particles
+        const FADE_SPEED = 0.015; // Speed multiplier for fading out explosion particles
+
+        // --- Global State ---
+        let particles = [];
+        let lastTime = 0;
+        let timeSinceLastLaunch = 0;
+        let nextLaunchTime = 0;
+
+        // --- Utility Functions ---
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function randomInt(min, max) {
+            return Math.floor(random(min, max + 1));
+        }
+
+        function calculateInitialVelocity(baseSpeed) {
+            // Scale base speed roughly by dt for 60fps equivalence if needed,
+            // but direct pixel/update values often work well visually.
+             return baseSpeed * (16.67 / 1000); // Rough scaling if dt varies widely
+            // return baseSpeed; // Simpler if dt is relatively stable
+        }
+
+        // --- Particle Classes ---
+
+        class Rocket {
+            constructor() {
+                this.x = random(W * 0.4, W * 0.6); // Launch near bottom center
+                this.y = H;
+                this.vx = random(-1.5, 1.5); // Slight horizontal variance
+                this.vy = random(ROCKET_VELOCITY_MIN, ROCKET_VELOCITY_MAX); // Strong upward velocity
+                this.targetY = H * random(1 - ROCKET_TARGET_ALTITUDE_MAX, 1 - ROCKET_TARGET_ALTITUDE_MIN);
+                this.hue = random(0, 360); // Base color for rocket & explosion
+                this.size = 2;
+                this.exploded = false;
+            }
+
+            update(dt) {
+                // Apply gravity
+                this.vy += GRAVITY * dt * 60; // Scale gravity by dt (assuming dt is in seconds)
+
+                // Update position
+                this.x += this.vx * dt * 60;
+                this.y += this.vy * dt * 60;
+
+                // Check for explosion condition (reached target altitude or starts falling)
+                if (this.y <= this.targetY || this.vy >= 0) {
+                    this.exploded = true;
+                    createExplosion(this.x, this.y, this.hue);
+                }
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = `hsl(${this.hue}, 100%, 70%)`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class ExplosionParticle {
+            constructor(x, y, hue) {
+                this.x = x;
+                this.y = y;
+                const angle = random(0, Math.PI * 2);
+                const speed = random(0.5, EXPLOSION_SPEED_MAX);
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.hue = hue + random(-20, 20); // Slight color variation
+                this.saturation = random(70, 100);
+                this.lightness = random(50, 70);
+                this.size = random(PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX);
+                this.lifespan = random(EXPLOSION_LIFESPAN_MIN, EXPLOSION_LIFESPAN_MAX);
+                this.initialLifespan = this.lifespan; // Store for alpha calculation
+                this.alpha = 1;
+            }
+
+            update(dt) {
+                // Apply gravity
+                this.vy += GRAVITY * dt * 60; // Scale gravity by dt
+
+                // Apply friction/drag
+                this.vx *= FRICTION;
+                this.vy *= FRICTION;
+
+                // Update position
+                this.x += this.vx * dt * 60;
+                this.y += this.vy * dt * 60;
+
+                // Decrease lifespan and alpha
+                this.lifespan -= dt;
+                // this.alpha = Math.max(0, this.lifespan / this.initialLifespan); // Linear fade
+                 this.alpha = Math.max(0, this.alpha - FADE_SPEED * dt * 60); // Alternative fade
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, ${this.alpha})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // --- Simulation Logic ---
+
+        function createExplosion(x, y, hue) {
+            const count = randomInt(EXPLOSION_PARTICLE_COUNT_MIN, EXPLOSION_PARTICLE_COUNT_MAX);
+            for (let i = 0; i < count; i++) {
+                particles.push(new ExplosionParticle(x, y, hue));
+            }
+        }
+
+        function launchRocket() {
+            particles.push(new Rocket());
+            // console.log(`Launched rocket. Total particles: ${particles.length}`);
+        }
+
+        function setNextLaunchTime() {
+             nextLaunchTime = random(LAUNCH_INTERVAL_MIN, LAUNCH_INTERVAL_MAX);
+             timeSinceLastLaunch = 0; // Reset timer
+        }
+
+        function handleResize() {
+            W = window.innerWidth;
+            H = window.innerHeight;
+            canvas.width = W;
+            canvas.height = H;
+            // Optional: Could clear particles or adjust existing ones if needed,
+            // but letting them fly off/fade usually works fine for fireworks.
+        }
+
+        // --- Main Game Loop ---
+        function gameLoop(timestamp) {
+            // Calculate delta time (in seconds)
+            if (!lastTime) {
+                lastTime = timestamp;
+            }
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // --- Update Logic ---
+
+            // Handle autonomous launching
+            timeSinceLastLaunch += dt;
+            if (timeSinceLastLaunch >= nextLaunchTime) {
+                launchRocket();
+                setNextLaunchTime();
+            }
+
+            // Update particles and handle removal
+            // Iterate backwards for safe removal using splice
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.update(dt);
+
+                // Remove particles:
+                // - Rockets that have exploded
+                // - Explosion particles whose lifespan is over or are fully faded
+                if ((p instanceof Rocket && p.exploded) || (p instanceof ExplosionParticle && (p.lifespan <= 0 || p.alpha <= 0))) {
+                    particles.splice(i, 1);
+                }
+            }
+
+             // Add Note about particle count (optional)
+             const notes = document.getElementById('notes');
+             notes.textContent = `Particles: ${particles.length}`;
+
+
+            // --- Draw Logic ---
+
+            // Clear canvas with a subtle trail effect
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; // Adjust alpha for trail length (lower = longer trails)
+            ctx.fillRect(0, 0, W, H);
+
+            // Alternatively, for a clean clear:
+            // ctx.clearRect(0, 0, W, H);
+
+            // Draw all particles
+            for (const p of particles) {
+                p.draw(ctx);
+            }
+
+            // Request next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Initialization ---
+        window.addEventListener('resize', handleResize);
+        setNextLaunchTime(); // Set the first launch timer
+        requestAnimationFrame(gameLoop); // Start the loop
+
+    </script>
+    <section id="notes">
+        <!-- Notes will be updated by JS -->
+        Particles: 0
+    </section>
+</body>
+</html>
