@@ -1,13 +1,14 @@
-# KoboldJSBench
-Benchmarking Local LLMs using Koboldcpp on Javascript
+# LocalLLM Visual Code Test
+Javascript Benchmarking Local LLMs using Llamacpp / Koboldcpp
 
 # View the current results
-This is the output from the current 4 prompts.  
-* [Results 2025.04.21](https://makeplayhappy.github.io/KoboldJSBench/results/2025.04.21/)
-* [Results 2025.04.15](https://makeplayhappy.github.io/KoboldJSBench/results/2025.04.15/)
+This is the output from the current prompts.  
+* [Results 2025.04.21](https://electricazimuth.github.io/LocalLLM_VisualCodeTest/2025.04.28/)
+* [Results 2025.04.21](https://electricazimuth.github.io/LocalLLM_VisualCodeTest/2025.04.21/)
+* [Results 2025.04.15](https://electricazimuth.github.io/LocalLLM_VisualCodeTest/2025.04.15/)
 
 
-#  KoboldCpp LLM Benchmark Suite 
+#  Visual LLM Benchmark 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) <!-- Optional: Add a license badge if you have one -->
 
@@ -63,11 +64,11 @@ Stop guessing, start measuring! 📊
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/makeplayhappy/KoboldJSBench.git # Replace with your repo URL
-    cd KoboldJSBench
+    git clone https://github.com/electricazimuth/LocalLLM_VisualCodeTest.git # Replace with your repo URL
+    cd LocalLLM_VisualCodeTest
     ```
 
-2.  **❗ Configure `run_benchmarks.py` ❗:** Update the paths for your setup. Open `run_benchmarks.py` in a text editor and **carefully update the following paths and settings** near the top of the file:
+2.  **❗ Configure `config.py` ❗:** Update the paths for your setup. Open `config.py` in a text editor and **carefully update the following paths and settings** near the top of the file:
     *   `KOBOLDCPP_SCRIPT`: **Absolute path** to your `koboldcpp.py` script.
     *   `MODEL_DIR`: **Absolute path** to the directory containing your `.gguf` models.
     *   `PROMPT_DIR`: **Absolute path** to the directory containing your `.md` prompt files.
@@ -87,9 +88,9 @@ Stop guessing, start measuring! 📊
 ### Running the Benchmarks
 
 1.  Navigate to the project directory in your terminal.
-2.  Execute the main script:
+2.  Execute the main script eg(backend is either "llamacpp" or "koboldcpp"):
     ```bash
-    python run_benchmarks.py
+    python run_benchmarks.py --backend llamacpp
     ```
 3.  **For long runs**, it's highly recommended to use `nohup` (on Linux/macOS) to prevent the process from stopping if you close the terminal:
     ```bash
@@ -108,6 +109,7 @@ Stop guessing, start measuring! 📊
     python extract_html.py
     ```
 4.  Check your `results` directory – you should now see corresponding `.html` files for any markdown files that contained valid `<!DOCTYPE html>...</html>` blocks. Open them in your browser!
+5.  Generate a static viewer use the `static_viewer.php`
 
 ## 📊 Results Interpretation
 
