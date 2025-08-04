@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; } /* Light blue background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color:rgb(207, 247, 255); } /* blue water */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <script>
+        // Get the canvas and its context
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Define a Fish class
+        class Fish {
+            constructor(x, y, vx, vy, size, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = size;
+                this.color = color;
+                this.angle = Math.atan2(vy, vx);
+            }
+
+            // Update the fish position and velocity
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+
+                // Boundary detection and reaction
+                if (this.x < 0 || this.x > W) {
+                    this.vx = -this.vx;
+                }
+                if (this.y < 0 || this.y > H) {
+                    this.vy = -this.vy;
+                }
+
+                // Wandering behavior
+                this.angle += (Math.random() - 0.5) * 0.01;
+                this.vx = Math.cos(this.angle) * 0.1;
+                this.vy = Math.sin(this.angle) * 0.1;
+
+                // Keep the fish within the canvas boundaries
+                if (this.x < 0) {
+                    this.x = 0;
+                } else if (this.x > W) {
+                    this.x = W;
+                }
+                if (this.y < 0) {
+                    this.y = 0;
+                } else if (this.y > H) {
+                    this.y = H;
+                }
+            }
+
+            // Draw the fish
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+                ctx.beginPath();
+                ctx.moveTo(0, -this.size / 2);
+                ctx.lineTo(-this.size / 2, this.size / 2);
+                ctx.lineTo(this.size / 2, this.size / 2);
+                ctx.closePath();
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Create an array of fish
+        const fish = [];
+        for (let i = 0; i < 15; i++) {
+            const x = Math.random() * W;
+            const y = Math.random() * H;
+            const vx = Math.random() * 0.1 - 0.05;
+            const vy = Math.random() * 0.1 - 0.05;
+            const size = Math.random() * 20 + 10;
+            const color = `hsl(${Math.random() * 360}, 50%, 50%)`;
+            fish.push(new Fish(x, y, vx, vy, size, color));
+        }
+
+        // Main animation loop
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            // Calculate the delta time
+            const deltaTime = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Clear the canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update and draw each fish
+            fish.forEach(fish => {
+                fish.update(deltaTime);
+                fish.draw();
+            });
+
+            // Request the next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the animation loop
+        requestAnimationFrame(gameLoop);
+    </script>
+
+    <section id="notes">
+        This simulation creates a visually appealing aquarium environment with multiple fish swimming around. Each fish is an instance of the Fish class, which encapsulates its state and behavior. The main animation loop uses requestAnimationFrame to achieve smooth and efficient rendering.
+    </section>
+</body>
+</html>

@@ -5,11 +5,11 @@ from pathlib import Path
 # --- General Configuration ---
 MAIN_START_TIME = datetime.datetime.now()
 # Directory where your models (.gguf) are stored
-MODEL_DIR = Path("/your/local/path_to/Models/").expanduser().resolve()
+MODEL_DIR = Path("Models").expanduser().resolve()
 # Directory where your prompts (.md) are stored
-PROMPT_DIR = Path("/your/local/path_to/prompts").expanduser().resolve()
+PROMPT_DIR = Path("prompts").expanduser().resolve()
 # Directory to save the results
-RESULTS_DIR = Path("/your/local/path_to/results").expanduser().resolve()
+RESULTS_DIR = Path("results").expanduser().resolve()
 
 # --- Model Filtering ---
 # Set max/min size to None to disable filtering by size
@@ -40,8 +40,8 @@ COMMON_GEN_PARAMS = {
 }
 
 # --- Backend Specific Paths ---
-KOBOLDCPP_SCRIPT_PATH = Path("/your/local/path_to/koboldcpp/koboldcpp.py").resolve()
-LLAMA_CPP_SERVER_PATH = Path("/your/local/path_to/llama.cpp/build/bin/llama-server").resolve() # Adjust if llama-server is elsewhere
+KOBOLDCPP_SCRIPT_PATH = Path("/home/david/Documents/koboldcpp/koboldcpp.py").resolve()
+LLAMA_CPP_SERVER_PATH = Path("/home/david/Documents/llama.cpp/build/bin/llama-server").resolve() # Adjust if llama-server is elsewhere
 
 # --- Backend Specific Arguments (Defaults) ---
 # These are BASE arguments, model path and port/host will be added/overridden

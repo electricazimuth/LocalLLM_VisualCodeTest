@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
+    <section id="notes">
+        <!-- Notes about the implementation -->
+    </section>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const numBalls = 20;
+        const ballRadius = 5;
+        const gravity = 0.5;
+        const dampingFactor = 0.8;
+        const heptagonSize = 150;
+        const heptagonCenter = W / 2;
+        const heptagonRotationSpeed = 0.06; // degrees per frame
+        let rotationAngle = 0;
+        const ballColors = [
+            "#f8b862", "#f6ad49", "#f39800", "#f08300", "#ec6d51", "#ee7948",
+            "#ed6d3d", "#ec6800", "#ec6800", "#ee7800", "#eb6238", "#ea5506",
+            "#ea5506", "#eb6101", "#e49e61", "#e45e32", "#e17b34", "#dd7a56",
+            "#db8449", "#d66a35"
+        ];
+
+        class Ball {
+            constructor(x, y, vx, vy, radius, color, spin) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = radius;
+                this.color = color;
+                this.spin = spin; // Number indicating spin
+            }
+
+            update() {
+                this.vy += gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collisions
+                if (this.x - this.r < 0 || this.x + this.r > W) {
+                    this.vx = -this.vx * dampingFactor;
+                    this.x = Math.max(this.r, Math.min(this.x, W - this.r));
+                }
+                if (this.y - this.r < 0 || this.y + this.r > H) {
+                    this.vy = -this.vy * dampingFactor;
+                    this.y = Math.max(this.r, Math.min(this.y, H - this.r));
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+                ctx.fillStyle = "black";
+                ctx.font = "12px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(this.spin, this.x, this.y + 8); // Display spin number
+            }
+        }
+
+        // Create balls
+        const balls = [];
+        for (let i = 0; i < numBalls; i++) {
+            const spin = (i + 1) % ballColors.length; // Use number for spin
+            const x = heptagonCenter + (W / 2 - heptagonSize / 2 + i * (W / 4));
+            const y = heptagonCenter + (H / 2 - heptagonSize / 2 + i * (H / 4));
+            const vx = (Math.random() - 0.5) * 5;
+            const vy = (Math.random() - 0.5) * 5;
+            balls.push(new Ball(x, y, vx, vy, ballRadius, ballColors[spin], spin));
+        }
+
+        function gameLoop(timestamp) {
+            // Update logic
+            for (let i = 0; i < balls.length; i++) {
+                balls[i].update();
+            }
+
+            // Draw logic
+            ctx.clearRect(0, 0, W, H);
+            for (const ball of balls) {
+                ball.draw();
+            }
+
+            // Rotate the heptagon
+            rotationAngle += heptagonRotationSpeed;
+
+            // Calculate the heptagon vertices
+            const vertices = [];
+            const angleIncrement = 2 * Math.PI / 7;
+            for (let i = 0; i < 7; i++) {
+                const x = heptagonCenter + heptagonSize * Math.cos(rotationAngle + i * angleIncrement);
+                const y = heptagonCenter + heptagonSize * Math.sin(rotationAngle + i * angleIncrement);
+                vertices.push({ x, y });
+            }
+
+            // Draw the heptagon
+            ctx.beginPath();
+            ctx.moveTo(vertices[0].x, vertices[0].y);
+            for (let i = 1; i < 7; i++) {
+                ctx.lineTo(vertices[i].x, vertices[i].y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'; // Transparent heptagon
+            ctx.fill();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

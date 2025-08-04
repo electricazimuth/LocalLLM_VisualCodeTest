@@ -1,0 +1,203 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        const balls = [];
+        const numBalls = 20;
+        const ballRadius = 15;
+        const gravityValue = 0.1;
+        const dampingFactor = 0.8;
+        const colors = ["#f8b862", "#f6ad49", "#f39800", "#f08300", "#ec6d51", "#ee7948", "#ed6d3d", "#ec6800", "#ec6800", "#ee7800", "#eb6238", "#ea5506", "#ea5506", "#eb6101", "#e49e61", "#e45e32", "#e17b34", "#dd7a56", "#db8449", "#d66a35"];
+
+        const heptagonCenter = { x: W / 2, y: H / 2 };
+        const heptagonRadius = 100;
+        let heptagonAngle = 0;
+        const heptagonRotationSpeed = 360 / (5 * 60); // 360 degrees in 5 seconds (60 frames per second)
+
+        class Ball {
+            constructor(x, y, vx, vy, color, number) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = ballRadius;
+                this.color = color;
+                this.mass = 1; // Simplified mass
+                this.number = number;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+
+                ctx.fillStyle = "black";
+                ctx.font = "12px Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(this.number, this.x, this.y);
+            }
+        }
+
+        function createBalls() {
+            for (let i = 0; i < numBalls; i++) {
+                const angle = (i / numBalls) * 2 * Math.PI;
+                const x = heptagonCenter.x + heptagonRadius * Math.cos(angle);
+                const y = heptagonCenter.y + heptagonRadius * Math.sin(angle);
+                const vx = (Math.random() - 0.5) * 2;
+                const vy = (Math.random() - 0.5) * 2;
+                const color = colors[i % colors.length];
+                balls.push(new Ball(x, y, vx, vy, color, i + 1));
+            }
+        }
+
+        function drawHeptagon() {
+            ctx.beginPath();
+            const numSides = 7;
+            const angleIncrement = 2 * Math.PI / numSides;
+
+            ctx.moveTo(heptagonCenter.x + heptagonRadius * Math.cos(0), heptagonCenter.y + heptagonRadius * Math.sin(0));
+
+            for (let i = 1; i <= numSides; i++) {
+                const angle = i * angleIncrement;
+                const x = heptagonCenter.x + heptagonRadius * Math.cos(angle);
+                const y = heptagonCenter.y + heptagonRadius * Math.sin(angle);
+                ctx.lineTo(x, y);
+            }
+
+            ctx.closePath();
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function wallCollision(ball) {
+            if (ball.x + ball.r > W) {
+                ball.x = W - ball.r;
+                ball.vx = -ball.vx * dampingFactor;
+            } else if (ball.x - ball.r < 0) {
+                ball.x = ball.r;
+                ball.vx = -ball.vx * dampingFactor;
+            }
+
+            if (ball.y + ball.r > H) {
+                ball.y = H - ball.r;
+                ball.vy = -ball.vy * dampingFactor;
+            } else if (ball.y - ball.r < 0) {
+                ball.y = ball.r;
+                ball.vy = -ball.vy * dampingFactor;
+            }
+        }
+
+        function ballBallCollision(ball1, ball2) {
+            const dx = ball2.x - ball1.x;
+            const dy = ball2.y - ball1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < ball1.r + ball2.r) {
+                // Collision detected
+                const angle = Math.atan2(dy, dx);
+
+                // Calculate the velocities along the line of collision
+                const v1x = ball1.vx * Math.cos(angle) + ball1.vy * Math.sin(angle);
+                const v1y = -ball1.vx * Math.sin(angle) + ball1.vy * Math.cos(angle);
+                const v2x = ball2.vx * Math.cos(angle) + ball2.vy * Math.sin(angle);
+                const v2y = -ball2.vx * Math.sin(angle) + ball2.vy * Math.cos(angle);
+
+                // Calculate the new velocities after the collision
+                const v1xNew = (v1x * (ball1.mass - ball2.mass) + 2 * ball2.mass * v2x) / (ball1.mass + ball2.mass);
+                const v2xNew = (v2x * (ball2.mass - ball1.mass) + 2 * ball1.mass * v1x) / (ball1.mass + ball2.mass);
+
+                const v1yNew = v1y;
+                const v2yNew = v2y;
+
+                // Convert back to the original coordinate system
+                ball1.vx = v1xNew * Math.cos(angle) - v1yNew * Math.sin(angle);
+                ball1.vy = v1xNew * Math.sin(angle) + v1yNew * Math.cos(angle);
+                ball2.vx = v2xNew * Math.cos(angle) - v2yNew * Math.sin(angle);
+                ball2.vy = v2xNew * Math.sin(angle) + v2yNew * Math.cos(angle);
+
+                // Separate the balls to prevent sticking
+                const overlap = (ball1.r + ball2.r - distance) / 2;
+                ball1.x -= overlap * Math.cos(angle);
+                ball1.y -= overlap * Math.sin(angle);
+                ball2.x += overlap * Math.cos(angle);
+                ball2.y += overlap * Math.sin(angle);
+            }
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            drawHeptagon();
+
+            for (let i = 0; i < balls.length; i++) {
+                const ball = balls[i];
+
+                // Apply gravity
+                ball.vy += gravityValue;
+
+                // Update positions
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+
+                // Wall collision
+                wallCollision(ball);
+
+                // Ball-to-ball collision
+                for (let j = i + 1; j < balls.length; j++) {
+                    ballBallCollision(ball, balls[j]);
+                }
+
+                ball.draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        createBalls();
+        requestAnimationFrame(gameLoop);
+        
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+        <p>This code simulates bouncing balls in a spinning heptagon container using HTML Canvas and JavaScript.</p>
+        <p>Key features:</p>
+        <ul>
+            <li><b>Heptagon Container:</b> A spinning heptagon is drawn on the canvas.</li>
+            <li><b>Balls:</b> 20 balls are created with random initial velocities and assigned colors and numbers.</li>
+            <li><b>Gravity:</b> Balls are affected by gravity, causing them to fall.</li>
+            <li><b>Wall Collision:</b> Balls bounce off the walls of the container with damping to simulate energy loss.</li>
+            <li><b>Ball-to-Ball Collision:</b> Balls collide with each other, and their velocities are adjusted based on a simplified collision response.</li>
+            <li><b>Animation Loop:</b> <code>requestAnimationFrame</code> is used for smooth animation.</li>
+        </ul>
+    </section>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: gemma-3-27b-it-qat-UD-Q4_K_XL.gguf -->
+<!-- Prompt: heptagon.md -->
+<!-- Generation Time: 64.81s -->
+<!-- Fallback Used: False -->

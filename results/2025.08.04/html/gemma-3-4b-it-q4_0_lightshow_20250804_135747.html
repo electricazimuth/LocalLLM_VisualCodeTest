@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body onload="init()">
+    <canvas id="glCanvas"></canvas>
+
+    <script>
+        // --- Standard WebGL Boilerplate ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        gl.clearColor(0, 0, 0, 1); // Black background
+
+        // --- Vertex Shader ---
+        const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertexShader, `
+            attribute vec3 aPosition;
+            uniform float uTime;
+            uniform float uResolution[2];
+
+            void main() {
+                gl_Position = vec4(aPosition, 1.0);
+                // Full-screen quad
+                vec2 uv = gl_FragCoord.xy / uResolution.xy;
+                uv *= 0.5 + 0.5;
+                // Time-based animation
+                vec3 offset = vec3(uv.x, uv.y, uTime);
+                gl_Position.xyz = offset;
+            }
+        `);
+        gl.useProgram(vertexShader);
+
+        // --- Fragment Shader ---
+        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragmentShader, `
+            #ifdef GLSL
+            // SDF for a sphere
+            float sdfSphere(vec3 p, float r) {
+                return length(p) - r;
+            }
+
+            // Smooth minimum function (smin)
+            float smin(float a, float b, float k) {
+                return -log(exp(-k * a) + exp(-k * b)) / k;
+            }
+
+            // Metaball parameters
+            uniform vec3 uMetaballPosition[4];
+            uniform float uMetaballRadius[4];
+            uniform float uMetaballK[4];
+            uniform float uTime;
+            uniform float uResolution[2];
+            uniform vec3 uLightDirection;
+
+            // Combined SDF
+            float combinedSDF(vec3 p) {
+                float minDist = 10000000.0;
+                for (int i = 0; i < 4; i++) {
+                    float dist = sdfSphere(p - uMetaballPosition[i], uMetaballRadius[i]);
+                    minDist = min(minDist, dist);
+                }
+                return smin(minDist, 0.0, uMetaballK[i]);
+            }
+
+            // Shading
+            void main() {
+                float sdf = combinedSDF(gl_FragCoord.xyz);
+
+                // Lighting (very basic)
+                float light = max(0.0, dot(normalize(uLightDirection), normalize(gl_FragCoord.xyz - uMetaballPosition[0])));
+
+                // Color - Psychedelic effect
+                vec3 color = vec3(0.0);
+                color.r = 0.5 + 0.5 * sin(uTime * 2.0) * 0.5;
+                color.g = 0.5 + 0.5 * cos(uTime * 3.0) * 0.5;
+                color.b = 0.5 + 0.5 * sin(uTime * 4.0) * 0.5;
+
+                // Apply light and color
+                gl_FragColor = vec4(color + light * 0.1, 1.0);
+            }
+            #endif
+        `);
+        gl.useProgram(fragmentShader);
+
+        // --- Uniforms ---
+        const uniformLocations = {
+            time: gl.uniformLocation(vertexShader, 'uTime'),
+            resolution: gl.uniformLocation(vertexShader, 'uResolution'),
+            metaballPosition: gl.uniformLocation(fragmentShader, 'uMetaballPosition'),
+            metaballRadius: gl.uniformLocation(fragmentShader, 'uMetaballRadius'),
+            metaballK: gl.uniformLocation(fragmentShader, 'uMetaballK'),
+            lightDirection: gl.uniformLocation(fragmentShader, 'uLightDirection')
+        };
+
+        // --- Metaballs ---
+        const metaballs = [
+            { position: [1.0, 0.5, -2.0], radius: 0.5, k: 1.0 },
+            { position: [-1.0, 0.5, -1.5], radius: 0.4, k: 0.8 },
+            { position: [0.0, 1.0, 0.0], radius: 0.3, k: 1.2 },
+            { position: [0.5, -0.5, 1.0], radius: 0.2, k: 0.5 }
+        ];
+
+        // --- Light Direction ---
+        uniformLocations.lightDirection = gl.uniformLocation(fragmentShader, 'uLightDirection');
+        gl.uniform3f(uniformLocations.lightDirection, 1.0, 1.0, 1.0);
+
+        // --- Mesh Setup ---
+        const vertices = [
+            [-1.0, -1.0, 0.0],
+            [1.0, -1.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [-1.0, 1.0, 0.0]
+        ];
+
+        const indices = [
+            0, 1, 2,
+            0, 2, 3
+        ];
+
+        const vertexBuffer = gl.createBuffer();
+        gl.bufferData(vertexBuffer, new Float32Array(vertices), gl.STATIC_DRAW);
+
+        const indexBuffer = gl.createBuffer();
+        gl.bufferData(indexBuffer, new Uint16Array(indices), gl.STATIC_DRAW);
+
+        // --- Shaders ---
+        gl.bindVertexBuffers(0, vertexBuffer);
+        gl.bindIndexBuffer(0, indexBuffer);
+
+        gl.vertexShader = vertexShader;
+        gl.fragmentShader = fragmentShader;
+
+        // --- Animation Loop ---
+        let time = 0.0;
+        function animate() {
+            time += 0.01; // Delta time
+            for (let i = 0; i < metaballs.length; i++) {
+                // Update metaball positions and radii (example - simple movement)
+                metaballs[i].position += vec3(0.01, 0.0, 0.0);
+                // Keep radii within bounds
+                metaballs[i].radius = max(0.01, metaballs[i].radius - 0.001);
+            }
+
+            gl.uniform3fv(uniformLocations.time, [time]);
+            gl.uniformSetMatrixfv(uniformLocations.resolution, [uniformLocations.resolution.value], [
+                [uResolution[0], 0, 0],
+                [0, uResolution[1], 0],
+                [0, 0, 1]
+            ]);
+            gl.uniformSetfv(uniformLocations.metaballPosition, metaballs.map(m => m.position));
+            gl.uniformSetfv(uniformLocations.metaballRadius, metaballs.map(m => m.radius));
+            gl.uniformSetfv(uniformLocations.metaballK, metaballs.map(m => m.k));
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+    </script>
+</body>
+</html>

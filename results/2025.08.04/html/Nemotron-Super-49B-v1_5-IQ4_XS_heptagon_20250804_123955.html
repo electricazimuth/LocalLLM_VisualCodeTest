@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heptagon Ball Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const heptagonRadius = 150;
+        const collisionRadius = heptagonRadius * Math.cos(Math.PI / 7); // Apothem for collision
+
+        const balls = [];
+        const numBalls = 20;
+
+        for (let i = 0; i < numBalls; i++) {
+            balls.push({
+                x: cx + Math.random() * 200 - 100,
+                y: cy + Math.random() * 200 - 100,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2,
+                radius: 10,
+                color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+                number: i + 1,
+                spin: 0
+            });
+        }
+
+        let rotationAngle = 0;
+        const rotationSpeedRadPerSecond = (72 * Math.PI) / 180; // 72 degrees per second
+
+        let previousTime = 0;
+
+        function gameLoop(timestamp) {
+            requestAnimationFrame(gameLoop);
+            let delta_time = (timestamp - previousTime) / 1000;
+            previousTime = timestamp;
+
+            // Update rotation angle
+            rotationAngle += rotationSpeedRadPerSecond * delta_time;
+
+            // Apply gravity
+            const gravity = 0.5;
+            for (let ball of balls) {
+                ball.vy += gravity * delta_time;
+            }
+
+            // Update ball positions
+            for (let ball of balls) {
+                ball.x += ball.vx * delta_time;
+                ball.y += ball.vy * delta_time;
+            }
+
+            // Handle ball-ball collisions
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    let a = balls[i];
+                    let b = balls[j];
+                    let dx = b.x - a.x;
+                    let dy = b.y - a.y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < a.radius + b.radius) {
+                        // Compute normal vector
+                        let n = {
+                            x: dx / distance,
+                            y: dy / distance
+                        };
+
+                        // Separate the balls
+                        let overlap = (a.radius + b.radius) - distance;
+                        a.x -= n.x * overlap / 2;
+                        a.y -= n.y * overlap / 2;
+                        b.x += n.x * overlap / 2;
+                        b.y += n.y * overlap / 2;
+
+                        // Compute velocity change
+                        let va_dot_n = a.vx * n.x + a.vy * n.y;
+                        let vb_dot_n = b.vx * n.x + b.vy * n.y;
+                        let relative_velocity = va_dot_n - vb_dot_n;
+                        let e = 0.8; // Restitution coefficient
+                        let J = ((e + 1) * (-relative_velocity)) / 2;
+
+                        a.vx += J * n.x;
+                        a.vy += J * n.y;
+                        b.vx -= J * n.x;
+                        b.vy -= J * n.y;
+                    }
+                }
+            }
+
+            // Handle wall collisions (heptagon)
+            for (let ball of balls) {
+                let dx = ball.x - cx;
+                let dy = ball.y - cy;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > collisionRadius) {
+                    // Compute normal vector (from heptagon center to ball)
+                    let n = {
+                        x: dx / distance,
+                        y: dy / distance
+                    };
+
+                    // Compute dot product of velocity and normal
+                    let dot = ball.vx * n.x + ball.vy * n.y;
+
+                    // Apply collision response
+                    let damping = 0.8; // Damping factor
+                    ball.vx -= (1 + damping) * dot * n.x;
+                    ball.vy -= (1 + damping) * dot * n.y;
+                }
+            }
+
+            // Update spin
+            for (let ball of balls) {
+                ball.spin += (ball.vx * 0.01 - ball.vy * 0.01);
+                ball.spin *= 0.99; // Damping
+            }
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw heptagon
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rotationAngle);
+
+            // Draw heptagon as a polygon
+            ctx.beginPath();
+            for (let i = 0; i < 7; i++) {
+                let angle = i * 2 * Math.PI / 7;
+                let x = heptagonRadius * Math.cos(angle);
+                let y = heptagonRadius * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.fill();
+            ctx.restore();
+
+            // Draw balls
+            for (let ball of balls) {
+                ctx.save();
+                ctx.translate(ball.x, ball.y);
+
+                // Draw ball circle
+                ctx.beginPath();
+                ctx.arc(0, 0, ball.radius, 0, Math.PI * 2);
+                ctx.fillStyle = ball.color;
+                ctx.fill();
+
+                // Draw number
+                ctx.font = '12px Arial';
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.rotate(ball.spin);
+                ctx.fillText(ball.number, 0, 0);
+                ctx.restore();
+            }
+        }
+
+        gameLoop(0);
+    </script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; } /* Dark background suggested */
+        canvas { border: 1px solid #444; background-color: #000; display: block; margin: 20px auto; } /* Dark canvas bg */
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Particle classes
+        class Particle {
+            constructor(x, y, vx, vy, radius, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = radius;
+                this.color = color;
+                this.lifespan = 0;
+            }
+
+            update(dt) {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        class Rocket extends Particle {
+            constructor(x, y) {
+                super(x, y, 0, -5, 2, 'white');
+                this.fuseTime = Date.now() + Math.random() * 1000 + 500;
+            }
+
+            update(dt) {
+                super.update(dt);
+                this.vy += 0.1; // gravity
+            }
+
+            isExploded() {
+                return Date.now() > this.fuseTime;
+            }
+        }
+
+        class ExplosionParticle extends Particle {
+            constructor(x, y) {
+                super(x, y, Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 + 1, `hsl(${Math.random() * 360}, 100%, 50%)`);
+                this.lifespan = Date.now() + Math.random() * 1000 + 500;
+            }
+
+            update(dt) {
+                super.update(dt);
+                this.vy += 0.1; // gravity
+            }
+
+            isDead() {
+                return Date.now() > this.lifespan;
+            }
+        }
+
+        // Game variables
+        let particles = [];
+        let lastLaunchTime = Date.now();
+        let deltaTime = 0;
+
+        function gameLoop(timestamp) {
+            // Calculate delta time
+            deltaTime = (timestamp - (lastLaunchTime || timestamp)) / 1000;
+            lastLaunchTime = timestamp;
+
+            // Update logic
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update(deltaTime);
+                if (particles[i] instanceof Rocket && particles[i].isExploded()) {
+                    // Explode rocket
+                    const explosionParticles = [];
+                    for (let j = 0; j < 50; j++) {
+                        explosionParticles.push(new ExplosionParticle(particles[i].x, particles[i].y));
+                    }
+                    particles.splice(i, 1, ...explosionParticles);
+                } else if (particles[i] instanceof ExplosionParticle && particles[i].isDead()) {
+                    // Remove dead explosion particle
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Launch new rockets
+            if (Date.now() - lastLaunchTime > Math.random() * 1500 + 500) {
+                particles.push(new Rocket(W / 2, H - 10));
+                lastLaunchTime = Date.now();
+            }
+
+            // Draw logic
+            ctx.clearRect(0, 0, W, H);
+            for (let particle of particles) {
+                particle.draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <p>This code creates a fireworks simulation using HTML canvas and JavaScript. It uses object-oriented programming to define Particle, Rocket, and ExplosionParticle classes. The game loop updates and draws particles, launches new rockets, and removes dead particles.</p>
+        <p>The simulation uses a delta time to ensure smooth animation regardless of frame rate. It also uses a random interval to launch new rockets, creating a dynamic and unpredictable display.</p>
+        <p>The code is optimized for performance, using a single array to store all particles and removing dead particles to prevent unnecessary updates and draws.</p>
+    </section>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Llama-3.3-70B-Instruct-UD-IQ3_XXS.gguf -->
+<!-- Prompt: fireworks.md -->
+<!-- Generation Time: 49.60s -->
+<!-- Fallback Used: False -->

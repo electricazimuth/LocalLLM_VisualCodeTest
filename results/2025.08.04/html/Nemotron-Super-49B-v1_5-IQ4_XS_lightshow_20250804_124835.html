@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Psychedelic Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        // WebGL 2 context setup
+        const canvas = document.getElementById('canvas');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const gl = canvas.getContext('webgl2');
+        if (!gl) {
+            alert('WebGL 2 not supported');
+        }
+
+        // Shader sources
+        const vs = `
+            attribute vec3 position;
+            varying vec2 vUV;
+            
+            void main() {
+                gl_Position = vec4(position, 1.0);
+                vUV = (position.xy + 1.0) * 0.5;
+            }
+        `;
+
+        const fs = `
+            precision highp float;
+            
+            uniform float time;
+            uniform vec2 resolution;
+            
+            varying vec2 vUV;
+            
+            #define NUM_METABALLS 5
+            #define MAX_STEPS 100
+            #define MAX_DIST 10.0
+            #define SURFACE_DIST 0.001
+            
+            uniform vec3 metaballCenters[NUM_METABALLS];
+            uniform float metaballRadii[NUM_METABALLS];
+            
+            float smin(float a, float b, float k) {
+                float h = clamp(0.5 + 0.5*(a - b)/k, 0.0, 1.0);
+                return mix(a, b, h) - k * h * (1.0 - h);
+            }
+            
+            float sphereSDF(vec3 p, vec3 center, float radius) {
+                return length(p - center) - radius;
+            }
+            
+            float sceneSDF(vec3 p) {
+                float res = 1000.0;
+                float k = 2.0;
+                for (int i = 0; i < NUM_METABALLS; i++) {
+                    float d = sphereSDF(p, metaballCenters[i], metaballRadii[i]);
+                    res = smin(res, d, k);
+                }
+                return res;
+            }
+            
+            vec3 getNormal(vec3 p) {
+                vec2 eps = vec2(0.001, 0.0);
+                return normalize(vec3(
+                    sceneSDF(p + eps.xyy) - sceneSDF(p - eps.xyy),
+                    sceneSDF(p + eps.yxy) - sceneSDF(p - eps.yxy),
+                    sceneSDF(p + eps.yyx) - sceneSDF(p - eps.yyx)
+                ));
+            }
+            
+            vec4 raymarch(vec3 origin, vec3 dir) {
+                float t = 0.0;
+                for (int i = 0; i < MAX_STEPS; i++) {
+                    vec3 p = origin + dir * t;
+                    float d = sceneSDF(p);
+                    if (d < SURFACE_DIST) {
+                        return vec4(p, 1.0);
+                    }
+                    t += d;
+                    if (t > MAX_DIST) break;
+                }
+                return vec4(0.0, 0.0, 0.0, 0.0);
+            }
+            
+            void main() {
+                vec2 uv = vUV;
+                vec3 cameraPos = vec3(0.0, 0.0, 3.0);
+                vec3 rayDir = normalize(vec3(uv * 2.0 - 1.0, -1.0));
+                
+                vec4 hit = raymarch(cameraPos, rayDir);
+                vec3 color = vec3(0.0);
+                if (hit.w > 0.0) {
+                    vec3 p = hit.xyz;
+                    vec3 normal = getNormal(p);
+                    color = normal * 0.5 + 0.5;
+                    
+                    // Psychedelic color modulation
+                    color += sin(time + normal.x * 10.0) * 0.1;
+                    color += sin(time + normal.y * 10.0) * 0.1;
+                    color += sin(time + normal.z * 10.0) * 0.1;
+                    color = clamp(color, 0.0, 1.0);
+                }
+                
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        // Compile shaders and create program
+        function compileShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+            }
+            return shader;
+        }
+
+        const vertexShader = compileShader(gl.VERTEX_SHADER, vs);
+        const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fs);
+        
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error('Program link error:', gl.getProgramInfoLog(program));
+        }
+
+        // Vertex buffer setup
+        const vertices = new Float32Array([
+            -1, -1, 0.0,
+             1, -1, 0.0,
+            -1,  1, 0.0,
+             1, -1, 0.0,
+             1,  1, 0.0,
+            -1,  1, 0.0
+        ]);
+
+        const vertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+        const vertexPosition = gl.getAttribLocation(program, 'position');
+        gl.enableVertexAttribArray(vertexPosition);
+        gl.vertexAttribPointer(vertexPosition, 3, gl.FLOAT, false, 0, 0);
+
+        // Uniform locations
+        const uTime = gl.getUniformLocation(program, 'time');
+        const uMetaballCenters = [];
+        const uMetaballRadii = [];
+        for (let i = 0; i < 5; i++) {
+            uMetaballCenters.push(gl.getUniformLocation(program, `metaballCenters[${i}]`));
+            uMetaballRadii.push(gl.getUniformLocation(program, `metaballRadii[${i}]`));
+        }
+
+        // Metaball data
+        const metaballCenters = new Float32Array(15);
+        const metaballRadii = new Float32Array(5);
+
+        // Animation loop
+        let lastTime = 0;
+        function animate(timestamp) {
+            requestAnimationFrame(animate);
+            const time = timestamp / 1000.0;
+
+            // Update metaballs
+            for (let i = 0; i < 5; i++) {
+                const angle = time * 0.5 + i;
+                metaballCenters[i*3] = Math.sin(angle) * 1.5;
+                metaballCenters[i*3+1] = 0.0;
+                metaballCenters[i*3+2] = Math.cos(angle * 0.7 + i) * 1.5;
+                metaballRadii[i] = 0.8 + 0.2 * Math.sin(time * 0.3 + i);
+            }
+
+            // Set uniforms
+            gl.uniform1f(uTime, time);
+            for (let i = 0; i < 5; i++) {
+                gl.uniform3fv(uMetaballCenters[i], metaballCenters.subarray(i*3, i*3+3));
+                gl.uniform1f(uMetaballRadii[i], metaballRadii[i]);
+            }
+
+            // Clear
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Draw
+            gl.useProgram(program);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

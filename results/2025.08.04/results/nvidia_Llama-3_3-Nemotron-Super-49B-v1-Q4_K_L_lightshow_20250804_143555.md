@@ -1,0 +1,275 @@
+Below is the complete HTML file with embedded JavaScript for WebGL setup, uniforms update, and GLSL shaders for the vertex and fragment shaders. This implementation meets the core requirements and incorporates several desirable features for enhanced visual appeal.
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <script>
+        // --- Standard WebGL Boilerplate ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('experimental-webgl2'); // Prefer WebGL2 for more features
+        if (!gl) {
+            alert('WebGL2 not supported, falling back to WebGL1 might not work as expected');
+            gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) throw new Error('WebGL not supported');
+        }
+
+        // Resize canvas to full screen
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Vertex Shader: Simple Full Screen Quad
+        const vertexShaderSource = `
+            #ifdef GL_ES
+                precision highp float;
+            #endif
+            attribute vec2 aPosition;
+            void main() {
+                gl_Position = vec4(aPosition, 0, 1);
+            }
+        `;
+
+        // Fragment Shader: Ray Marching Metaballs
+        const fragmentShaderSource = `
+            #ifdef GL_ES
+                precision highp float;
+            #endif
+            #define NUM_METABALLS 5
+            #define MAX_STEPS 100
+            #define MAX_DIST 100.0
+            #define MIN_DIST 0.001
+
+            uniform vec2 uResolution;
+            uniform float uTime;
+            uniform vec3 uCameraPos;
+            uniform vec3 uLightDir;
+
+            struct Metaball {
+                vec3 pos;
+                float radius;
+                vec3 color;
+            };
+
+            Metaball metaballs[NUM_METABALLS];
+
+            // Initialize Metaballs with uniforms (simplified, in a real scenario, these would be uniforms or more dynamically updated)
+            void initMetaballs() {
+                for (int i = 0; i < NUM_METABALLS; i++) {
+                    float angle = float(i) * 0.1 + uTime * 0.01;
+                    float r = 0.5 + 0.3 * sin(uTime * 0.02 + float(i));
+                    metaballs[i].pos = vec3(sin(angle), cos(angle), 0.0) * 2.0; // Simple circular movement
+                    metaballs[i].radius = r;
+                    metaballs[i].color = vec3(sin(uTime + float(i)*3.1416/2.0), cos(uTime + float(i)*3.1416), 0.5); // Dynamic Color
+                }
+            }
+
+            float map(vec3 p) {
+                float d = MAX_DIST;
+                initMetaballs(); // Re-init on each frame for dynamic update (not optimal but simple for demo)
+                for (int i = 0; i < NUM_METABALLS; i++) {
+                    float dist = length(p - metaballs[i].pos) - metaballs[i].radius;
+                    d = min(d, dist);
+                }
+                return d;
+            }
+
+            vec3 normal(vec3 p) {
+                vec2 e = vec2(0.001, 0);
+                return normalize(vec3(
+                    map(p + e.xyy) - map(p - e.xyy),
+                    map(p + e.yxy) - map(p - e.yxy),
+                    map(p + e.yyx) - map(p - e.yyx)
+                ));
+            }
+
+            float rayMarch(vec3 ro, vec3 rd) {
+                float t = 0.0;
+                for (int i = 0; i < MAX_STEPS; i++) {
+                    vec3 p = ro + rd * t;
+                    float dist = map(p);
+                    if (dist < MIN_DIST) return t; // Hit
+                    if (t > MAX_DIST) return -1.0; // Miss
+                    t += dist;
+                }
+                return -1.0;
+            }
+
+            vec3 shade(vec3 p, vec3 n) {
+                vec3 col = vec3(0.0);
+                vec3 lightCol = vec3(1.0); // White light
+                float diff = max(0.0, dot(n, uLightDir));
+                col = metaballs[0].color * diff * lightCol; // Simplified: Use first metaball's color for demo
+                return col;
+            }
+
+            void main() {
+                vec2 uv = (gl_FragCoord.xy - vec2(0.5)) / vec2(uResolution.x, uResolution.y) * 2.0 - 1.0; // Adjust for aspect
+                vec3 ro = uCameraPos; // Camera Position (uniform for potential movement)
+                vec3 rd = normalize(vec3(uv, 1.0)); // Ray Direction
+
+                float t = rayMarch(ro, rd);
+                if (t > 0.0) {
+                    vec3 p = ro + rd * t;
+                    vec3 n = normal(p);
+                    gl_FragColor = vec4(shade(p, n), 1.0);
+                } else {
+                    gl_FragColor = vec4(0.0); // Background
+                }
+            }
+        `;
+
+        // Compile Shader
+        function compileShader(source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // Link Program
+        function createProgram(vSource, fSource) {
+            const program = gl.createProgram();
+            const vShader = compileShader(vSource, gl.VERTEX_SHADER);
+            const fShader = compileShader(fSource, gl.FRAGMENT_SHADER);
+            if (vShader && fShader) {
+                gl.attachShader(program, vShader);
+                gl.attachShader(program, fShader);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Program linking error:', gl.getProgramInfoLog(program));
+                    gl.deleteProgram(program);
+                    return null;
+                }
+                return program;
+            }
+            return null;
+        }
+
+        // Setup
+        const program = createProgram(vertexShaderSource, fragmentShaderSource);
+        if (!program) throw new Error('Failed to create program');
+
+        gl.useProgram(program);
+
+        // Attributes
+        const aPositionLocation = gl.getAttribLocation(program, 'aPosition');
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), gl.STATIC_DRAW);
+        gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(aPositionLocation);
+
+        // Uniforms
+        const uResolutionLocation = gl.getUniformLocation(program, 'uResolution');
+        const uTimeLocation = gl.getUniformLocation(program, 'uTime');
+        const uCameraPosLocation = gl.getUniformLocation(program, 'uCameraPos');
+        const uLightDirLocation = gl.getUniformLocation(program, 'uLightDir');
+
+        gl.uniform2fv(uResolutionLocation, [canvas.width, canvas.height]);
+        gl.uniform3fv(uCameraPosLocation, [0.0, 0.0, -5.0]); // Initial Camera Position
+        gl.uniform3fv(uLightDirLocation, [0.0, 0.0, 1.0]); // Initial Light Direction
+
+        // Animation Loop
+        let lastTime = 0;
+        function animate(timestamp) {
+            const deltaTime = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            gl.uniform1fv(uTimeLocation, [timestamp / 1000]); // Time in seconds
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.drawArrays(gl.TRIANGLES, 0, 3); // Draw the full screen quad
+            requestAnimationFrame(animate);
+        }
+        requestAnimationFrame(animate);
+    </script>
+
+    <!--
+    <section id="notes">
+        <h3>Implementation Notes</h3>
+        <ul>
+            <li><strong>SDF Combination:</strong> Simple min used for demo. For smoother blends, consider implementing `smin` as described.</li>
+            <li><strong>Optimizations:</strong> 
+                - <strong>Early Exit:</strong> Implemented in `rayMarch`.
+                - <strong>Level of Detail (LOD):</strong> Not implemented; could reduce steps based on distance.
+            </li>
+            <li><strong>Lighting/Coloring:</strong> Basic diffuse. Enhance with more advanced models or per-metaball colors.</li>
+            <li><strong>Dynamics:</strong> Metaball positions & colors change over time. Enhance with more complex patterns or noise functions.</li>
+        </ul>
+    </section>
+    -->
+</body>
+</html>
+```
+
+### Key Points & Suggestions for Enhancement:
+
+1. **SDF Combination for Smoother Blends**:
+   - **Current:** Simple `min` for combining metaball distances.
+   - **Enhancement:** Implement `smin` (smooth minimum) for organic blending:
+     ```glsl
+     float smin(float a, float b, float k) {
+         float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0);
+         return mix(b, a, h) - k * h * (1.0 - h);
+     }
+     ```
+     Replace the `min` in `map()` with `smin(d, dist, 0.5);` for smoother transitions.
+
+2. **Lighting Model**:
+   - **Current:** Basic diffuse lighting.
+   - **Enhancements:**
+     - **Ambient Occlusion Approximation**
+     - **Specular Highlights**
+     - **Use Per-Metaball Colors** in `shade()` by tracking the closest metaball in `rayMarch()`.
+
+3. **Noise for Texture/Movement**:
+   - Integrate a noise function (e.g., Simplex Noise) in the shader to:
+     - **Texture Metaballs**
+     - **Enhance Movement Patterns**
+
+4. **Dynamic Metaball Count**:
+   - Currently fixed at 5. Experiment with dynamically changing `NUM_METABALLS` over time for more variability.
+
+5. **Post-processing**:
+   - Though not core, for extra effects, consider layering with `globalCompositeOperation` or shader-based blur/effects in a second pass.
+
+6. **Optimizations**:
+   - **Level of Detail (LOD):** Reduce `MAX_STEPS` based on distance from the camera.
+   - **Occlusion Culling:** If implementing more complex scenes, cull metaballs not potentially visible.
+
+### Running the Simulation:
+
+1. Save the provided HTML code in a file (e.g., `metaballs.html`).
+2. Open the file in a modern web browser supporting WebGL2 (for optimal performance, though WebGL1 fallback is attempted).
+3. The simulation will run autonomously, displaying evolving, psychedelic metaball patterns.
+
+### Troubleshooting:
+
+- **No WebGL Support:** Ensure your browser and hardware support WebGL. Update your browser or graphics drivers if necessary.
+- **Performance Issues:** Reduce `MAX_STEPS` or simplify the shader for older hardware.
+- **Visual Artifacts:** Check for division by zero in shaders or incorrect normal calculations.
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: nvidia_Llama-3_3-Nemotron-Super-49B-v1-Q4_K_L.gguf -->
+<!-- Prompt: lightshow.md -->
+<!-- Generation Time: 116.65s -->
+<!-- Fallback Used: False -->

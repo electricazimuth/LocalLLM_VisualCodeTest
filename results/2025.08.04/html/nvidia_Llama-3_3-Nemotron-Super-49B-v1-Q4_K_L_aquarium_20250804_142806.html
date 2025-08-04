@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; } /* Light blue background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color:rgb(207, 247, 255); } /* blue water */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <script>
+        // *** Setup ***
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        let lastTimestamp = 0; // For delta time calculation
+        const FISH_COUNT = 15; // Number of fish to spawn
+
+        // *** Fish Class (Object-Oriented Approach) ***
+        class Fish {
+            constructor() {
+                this.x = Math.random() * W;
+                this.y = Math.random() * H;
+                this.vx = (Math.random() * 2 - 1) * 2; // Random initial velocity X
+                this.vy = (Math.random() * 2 - 1) * 2; // Random initial velocity Y
+                this.speed = Math.sqrt(this.vx**2 + this.vy**2); // Calculate speed
+                this.size = Math.random() * 20 + 10; // Random size between 10-30
+                this.color = `rgb(${Math.random()*255}, ${Math.random()*255}, ${Math.random()*255})`;
+                this.direction = Math.atan2(this.vy, this.vx); // Initial direction
+                this.turnSpeed = Math.random() * 0.05 + 0.01; // Random turn speed for wandering
+            }
+
+            // Update fish state based on delta time
+            update(dt) {
+                // Wandering behavior: Gradually change direction
+                this.direction += (Math.random() * 2 - 1) * this.turnSpeed * dt / 1000;
+                // Normalize direction to ensure consistent turn speed
+                if (Math.abs(this.direction) > Math.PI) this.direction -= Math.sign(this.direction) * 2 * Math.PI;
+
+                // Update velocity based on new direction and speed
+                this.vx = this.speed * Math.cos(this.direction);
+                this.vy = this.speed * Math.sin(this.direction);
+
+                // Move fish
+                this.x += this.vx * dt / 1000;
+                this.y += this.vy * dt / 1000;
+
+                // Boundary interaction: Smoothly turn back towards the center if approaching edges
+                if (this.x - this.size/2 < 0 || this.x + this.size/2 > W) {
+                    this.direction = Math.PI - this.direction; // Reflect direction
+                    // Optional: Add a slight randomness to turning back for more organic behavior
+                    // this.direction += Math.random() * Math.PI / 4 - Math.PI / 8;
+                }
+                if (this.y - this.size/2 < 0 || this.y + this.size/2 > H) {
+                    this.direction = -this.direction; // Reflect direction vertically
+                    // Optional randomness as above
+                }
+
+                // Ensure fish stays within bounds (safety net)
+                this.x = Math.max(this.size/2, Math.min(this.x, W - this.size/2));
+                this.y = Math.max(this.size/2, Math.min(this.y, H - this.size/2));
+            }
+
+            // Draw fish with orientation and simple tail
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.direction);
+
+                // Body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size/2, 0, Math.PI*2);
+                ctx.fill();
+
+                // Tail (simple triangle for demonstration)
+                ctx.fillStyle = 'rgba(0,0,0,0.3)'; // Darker for contrast
+                ctx.beginPath();
+                ctx.moveTo(-this.size/2, 0);
+                ctx.lineTo(-this.size, this.size/4);
+                ctx.lineTo(-this.size, -this.size/4);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // *** Initialization ***
+        const fish = Array(FISH_COUNT).fill().map(() => new Fish());
+
+        // *** Animation Loop ***
+        function gameLoop(timestamp) {
+            const dt = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+
+            // *** Update Logic ***
+            fish.forEach(fish => fish.update(dt));
+
+            // *** Draw Logic ***
+            ctx.clearRect(0, 0, W, H); // Clear canvas
+            fish.forEach(fish => fish.draw());
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+    </script>
+
+    <!-- Optional section for notes -->
+    <section id="notes">
+        <h3>Implementation Notes</h3>
+        <ul>
+            <li><strong>Object-Oriented Design:</strong> Utilized a `Fish` class for encapsulation.</li>
+            <li><strong>Efficient Rendering:</strong> Leverages `requestAnimationFrame` with delta time for smooth, frame-rate independent animation.</li>
+            <li><strong>Boundary Interaction:</strong> Fish smoothly turn back when approaching edges, with an optional note for adding randomness to turning behavior for more organic movements.</li>
+            <li><strong>Variation:</strong> Each fish has random size, color, and turn speed for diversity.</li>
+            <li><strong>Simplifications:</strong> Tail implementation is basic; could be enhanced with more complex animations.</li>
+        </ul>
+    </section>
+
+</body>
+</html>

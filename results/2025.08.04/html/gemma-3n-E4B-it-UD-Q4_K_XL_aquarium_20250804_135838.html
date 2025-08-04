@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; } /* Light blue background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color:rgb(207, 247, 255); } /* blue water */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        // Fish class
+        class Fish {
+            constructor(x, y, size, color, speed, direction) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.color = color;
+                this.speed = speed;
+                this.direction = direction; // Angle in radians
+                this.vx = this.speed * Math.cos(this.direction);
+                this.vy = this.speed * Math.sin(this.direction);
+                this.shapeType = 'oval'; // or 'triangle'
+                this.rotation = 0;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Boundary collision detection and response
+                if (this.x < 0 || this.x > W) {
+                    this.vx = -this.vx;
+                    this.x = Math.max(0, Math.min(W, this.x)); // Ensure fish stays within bounds
+                }
+                if (this.y < 0 || this.y > H) {
+                    this.vy = -this.vy;
+                    this.y = Math.max(0, Math.min(H, this.y)); // Ensure fish stays within bounds
+                }
+
+                // Boundary interaction - smooth turn
+                if (this.x < this.size / 2 || this.x > W - this.size / 2) {
+                    if (this.x < this.size / 2) {
+                        this.direction = Math.PI / 2 - (Math.PI / 4); // Turn right
+                    } else {
+                        this.direction = -Math.PI / 2 + (Math.PI / 4); // Turn left
+                    }
+                }
+                if (this.y < this.size / 2 || this.y > H - this.size / 2) {
+                    if (this.y < this.size / 2) {
+                        this.direction = Math.PI + Math.PI / 4; // Turn down-left
+                    } else {
+                        this.direction = Math.PI - Math.PI / 4; // Turn up-left
+                    }
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+
+                if (this.shapeType === 'oval') {
+                    ctx.ellipse(0, 0, this.size, this.size / 2, 0, 0, 2 * Math.PI);
+                } else if (this.shapeType === 'triangle') {
+                    ctx.beginPath();
+                    ctx.moveTo(0, -this.size / 2);
+                    ctx.lineTo(this.size / 2, this.size / 2);
+                    ctx.lineTo(-this.size / 2, this.size / 2);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // Initialize fish
+        const fish = [];
+        const numFish = 15;
+        const fishSizes = [20, 30, 40];
+        const fishColors = ['#FF0000', '#00FF00', '#0000FF']; // Red, Green, Blue
+        const fishShapes = ['oval', 'triangle'];
+
+        for (let i = 0; i < numFish; i++) {
+            const x = Math.random() * W;
+            const y = Math.random() * H;
+            const size = fishSizes[Math.floor(Math.random() * fishSizes.length)];
+            const color = fishColors[Math.floor(Math.random() * fishColors.length)];
+            const shape = fishShapes[Math.floor(Math.random() * fishShapes.length)];
+            fish.push(new Fish(x, y, size, color, Math.random() * 5 + 2, Math.random() * 2 * Math.PI));
+        }
+
+        // Animation loop
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update fish positions
+            for (let i = 0; i < fish.length; i++) {
+                fish[i].update();
+            }
+
+            // Draw fish
+            for (let i = 0; i < fish.length; i++) {
+                fish[i].draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+        // --- Notes ---
+        /*
+        Implementation Notes:
+        - Used a class for Fish to encapsulate state and behavior.
+        - Boundary collision handling is implemented by reversing the velocity and clamping the position.
+        - Smooth turning is achieved by gradually adjusting the direction when approaching the edges.
+        - Random initialization of fish positions, sizes, colors, and speeds creates diverse movement patterns.
+        - requestAnimationFrame ensures smooth, frame-rate independent animation.
+        */
+    </script>
+</body>
+</html>

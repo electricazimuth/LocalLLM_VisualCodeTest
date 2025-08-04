@@ -1,0 +1,406 @@
+# Vehicle Collision & Restart Simulation
+
+I'll create a complete simulation with vehicles moving around a canvas, wrapping at edges, and exploding on collision. Here's my implementation:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vehicle Collision Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #333; 
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block; 
+            margin: 20px auto; 
+            border: 1px solid #666; 
+            background-color: #000; 
+        }
+        #info {
+            text-align: center;
+            color: white;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+    <div id="info">Vehicles collide and explode. Simulation restarts automatically.</div>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Simulation state management
+        const STATES = {
+            RUNNING: 'RUNNING',
+            EXPLODING: 'EXPLODING',
+            RESTARTING: 'RESTARTING'
+        };
+        
+        let simulationState = STATES.RUNNING;
+        let vehicles = [];
+        let explosionParticles = [];
+        let explosionText = null;
+        let explosionStartTime = 0;
+        let restartTimeout = null;
+        
+        // Vehicle class
+        class Vehicle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 30;
+                this.height = 15;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = (Math.random() - 0.5) * 4;
+                this.color = this.getRandomColor();
+                this.isActive = true;
+                this.rotation = 0;
+            }
+            
+            getRandomColor() {
+                const colors = [
+                    '#FF5252', '#FF4081', '#E040FB', '#7C4DFF', 
+                    '#536DFE', '#448AFF', '#40C4FF', '#18FFFF',
+                    '#64FFDA', '#69F0AE', '#B2FF59', '#EEFF41'
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+            
+            update(deltaTime) {
+                if (!this.isActive) return;
+                
+                // Update position based on velocity
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                
+                // Screen wrapping
+                if (this.x > canvas.width + this.width) this.x = -this.width;
+                if (this.x < -this.width) this.x = canvas.width;
+                if (this.y > canvas.height + this.height) this.y = -this.height;
+                if (this.y < -this.height) this.y = canvas.height;
+                
+                // Update rotation for visual effect
+                this.rotation += this.vx * 0.01;
+            }
+            
+            draw() {
+                if (!this.isActive) return;
+                
+                ctx.save();
+                ctx.translate(this.x + this.width/2, this.y + this.height/2);
+                ctx.rotate(this.rotation);
+                
+                // Draw vehicle body
+                ctx.fillStyle = this.color;
+                ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+                
+                // Draw windows
+                ctx.fillStyle = '#A0D8F1';
+                ctx.fillRect(-this.width/2 + 5, -this.height/2 + 3, this.width - 10, this.height - 6);
+                
+                // Draw wheels
+                ctx.fillStyle = '#333';
+                ctx.beginPath();
+                ctx.arc(-this.width/3, this.height/2 - 2, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(this.width/3, this.height/2 - 2, 5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+        
+        // Explosion particle class
+        class ExplosionParticle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 5 + 2;
+                this.vx = (Math.random() - 0.5) * 10;
+                this.vy = (Math.random() - 0.5) * 10;
+                this.color = `hsl(${Math.random() * 60}, 100%, 50%)`;
+                this.lifespan = 1000; // milliseconds
+                this.maxLifespan = 1000;
+                this.alpha = 1;
+            }
+            
+            update(deltaTime) {
+                // Update position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                
+                // Apply gravity
+                this.vy += 0.1;
+                
+                // Update lifespan
+                this.lifespan -= deltaTime * 1000;
+                this.alpha = this.lifespan / this.maxLifespan;
+                
+                // Fade out as lifespan decreases
+                if (this.lifespan <= 0) {
+                    this.alpha = 0;
+                }
+            }
+            
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+        
+        // Explosion text class
+        class ExplosionText {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = 20;
+                this.lifespan = 1000; // milliseconds
+                this.maxLifespan = 1000;
+                this.alpha = 1;
+                this.scale = 1;
+            }
+            
+            update(deltaTime) {
+                this.lifespan -= deltaTime * 1000;
+                this.alpha = this.lifespan / this.maxLifespan;
+                this.scale = 1 + (1 - this.alpha) * 3;
+                
+                if (this.lifespan <= 0) {
+                    this.alpha = 0;
+                }
+            }
+            
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.font = `bold ${this.size * this.scale}px Arial`;
+                ctx.fillStyle = '#FF5252';
+                ctx.textAlign = 'center';
+                ctx.fillText('BOOM!', this.x, this.y);
+                ctx.restore();
+            }
+        }
+        
+        // Initialize vehicles
+        function initVehicles(count = 8) {
+            vehicles = [];
+            for (let i = 0; i < count; i++) {
+                // Ensure vehicles start within canvas bounds
+                const x = Math.random() * (canvas.width - 50) + 25;
+                const y = Math.random() * (canvas.height - 50) + 25;
+                vehicles.push(new Vehicle(x, y));
+            }
+        }
+        
+        // Check for collisions between vehicles
+        function checkCollisions() {
+            for (let i = 0; i < vehicles.length; i++) {
+                for (let j = i + 1; j < vehicles.length; j++) {
+                    const v1 = vehicles[i];
+                    const v2 = vehicles[j];
+                    
+                    if (!v1.isActive || !v2.isActive) continue;
+                    
+                    // Simple rectangle collision detection
+                    if (v1.x < v2.x + v2.width &&
+                        v1.x + v1.width > v2.x &&
+                        v1.y < v2.y + v2.height &&
+                        v1.y + v1.height > v2.y) {
+                        
+                        // Collision detected - create explosion
+                        createExplosion(v1.x + v1.width/2, v1.y + v1.height/2);
+                        
+                        // Mark vehicles as inactive
+                        v1.isActive = false;
+                        v2.isActive = false;
+                        
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        
+        // Create explosion effect
+        function createExplosion(x, y) {
+            // Create explosion particles
+            explosionParticles = [];
+            for (let i = 0; i < 25; i++) {
+                explosionParticles.push(new ExplosionParticle(x, y));
+            }
+            
+            // Create explosion text
+            explosionText = new ExplosionText(x, y);
+            
+            // Start explosion timer
+            explosionStartTime = Date.now();
+            
+            // Change state to EXPLODING
+            simulationState = STATES.EXPLODING;
+        }
+        
+        // Restart simulation
+        function restartSimulation() {
+            // Clear particles and text
+            explosionParticles = [];
+            explosionText = null;
+            
+            // Reinitialize vehicles
+            initVehicles(8);
+            
+            // Reset state
+            simulationState = STATES.RUNNING;
+        }
+        
+        // Main animation loop
+        let lastTime = 0;
+        function animate(timestamp) {
+            // Calculate delta time
+            const deltaTime = Math.min(0.1, (timestamp - lastTime) / 1000);
+            lastTime = timestamp;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background grid
+            drawGrid();
+            
+            // Update and draw based on state
+            switch (simulationState) {
+                case STATES.RUNNING:
+                    // Update vehicles
+                    vehicles.forEach(vehicle => vehicle.update(deltaTime));
+                    
+                    // Check for collisions
+                    checkCollisions();
+                    
+                    // Draw vehicles
+                    vehicles.forEach(vehicle => vehicle.draw());
+                    break;
+                    
+                case STATES.EXPLODING:
+                    // Update explosion particles
+                    explosionParticles.forEach(particle => particle.update(deltaTime));
+                    explosionParticles = explosionParticles.filter(p => p.lifespan > 0);
+                    
+                    // Update explosion text
+                    if (explosionText) {
+                        explosionText.update(deltaTime);
+                    }
+                    
+                    // Draw particles
+                    explosionParticles.forEach(particle => particle.draw());
+                    
+                    // Draw explosion text
+                    if (explosionText) {
+                        explosionText.draw();
+                    }
+                    
+                    // Check if explosion is complete
+                    if (explosionParticles.length === 0 && 
+                        explosionText && 
+                        explosionText.lifespan <= 0) {
+                        // Transition to restarting state
+                        simulationState = STATES.RESTARTING;
+                        
+                        // Set timeout for restart
+                        restartTimeout = setTimeout(restartSimulation, 2000);
+                    }
+                    break;
+                    
+                case STATES.RESTARTING:
+                    // Nothing to do here - just waiting for restart
+                    break;
+            }
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // Draw background grid
+        function drawGrid() {
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 0.5;
+            
+            // Vertical lines
+            for (let x = 0; x < canvas.width; x += 32) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Horizontal lines
+            for (let y = 0; y < canvas.height; y += 32) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+        
+        // Initialize and start simulation
+        initVehicles(8);
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>
+```
+
+## Implementation Details
+
+I've created a complete vehicle collision simulation with the following features:
+
+1. **Vehicle System**:
+   - Each vehicle has position, velocity, size, and color
+   - Vehicles wrap around canvas edges
+   - Simple car-like visual representation with body, windows, and wheels
+   - Rotation effect for visual appeal
+
+2. **Collision Detection**:
+   - Rectangle-based collision detection between vehicles
+   - Efficient pairwise checking to avoid redundant comparisons
+
+3. **Explosion System**:
+   - 25 explosion particles with random velocities and colors
+   - Particles fade out over time with gravity effect
+   - "BOOM!" text that expands and fades
+   - Visual feedback when collisions occur
+
+4. **State Management**:
+   - RUNNING: Normal vehicle movement and collision detection
+   - EXPLODING: Particle animation and text display
+   - RESTARTING: Cleanup and reset of simulation
+
+5. **Animation**:
+   - Smooth animation using requestAnimationFrame
+   - Delta time calculation for consistent frame rates
+   - Background grid for better visual reference
+
+6. **Visual Design**:
+   - Dark background with grid for contrast
+   - Colorful vehicles with distinct appearance
+   - Smooth particle physics with gravity
+   - Clear explosion text with scaling effect
+
+The simulation runs autonomously and will restart automatically after each explosion. The vehicles move at different speeds and directions, creating an engaging visual experience.
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q6_K_XL.gguf -->
+<!-- Prompt: vehicles.md -->
+<!-- Generation Time: 29.38s -->
+<!-- Fallback Used: False -->

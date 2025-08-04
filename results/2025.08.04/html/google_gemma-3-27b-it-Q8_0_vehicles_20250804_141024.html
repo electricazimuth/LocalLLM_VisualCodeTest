@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vehicle Collision Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #333; } /* Dark background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #666; background-color: #000; } /* Black canvas */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        // --- YOUR JAVASCRIPT CODE GOES HERE ---
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        let simulationState = 'RUNNING'; // Possible states: 'RUNNING', 'EXPLODING', 'RESTARTING'
+        let vehicles = [];
+        let explosionParticles = [];
+        let restartTimer = 0;
+        const restartDuration = 3000; // 3 seconds
+
+        class Vehicle {
+            constructor(x, y, vx, vy, size = 10) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = size;
+                this.color = '#' + Math.floor(Math.random()*16777215).toString(16);
+                this.isActive = true;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x - this.size, this.y - this.size, this.size * 2, this.size * 2);
+                // Simple wheel representation
+                ctx.fillStyle = 'gray';
+                ctx.beginPath();
+                ctx.arc(this.x - this.size, this.y + this.size, this.size / 2, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(this.x + this.size, this.y + this.size, this.size / 2, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+
+            update(deltaTime) {
+                if (!this.isActive) return;
+
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+
+                // Wrapping
+                if (this.x < 0) this.x = width;
+                else if (this.x > width) this.x = 0;
+
+                if (this.y < 0) this.y = height;
+                else if (this.y > height) this.y = 0;
+            }
+        }
+
+        class ExplosionParticle {
+            constructor(x, y, vx, vy, lifespan) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.lifespan = lifespan;
+                this.size = Math.random() * 5 + 2;
+                this.color = 'red';
+                this.opacity = 1;
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                this.lifespan -= deltaTime;
+                this.opacity = Math.max(0, this.lifespan / 200); // Fade out over time
+            }
+
+            draw() {
+                ctx.fillStyle = `rgba(255, 0, 0, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+
+
+        function initializeVehicles(numVehicles) {
+            vehicles = [];
+            for (let i = 0; i < numVehicles; i++) {
+                const x = Math.random() * width;
+                const y = Math.random() * height;
+                const vx = (Math.random() - 0.5) * 100;
+                const vy = (Math.random() - 0.5) * 100;
+                vehicles.push(new Vehicle(x, y, vx, vy));
+            }
+        }
+
+        function checkCollision(v1, v2) {
+            return (
+                v1.x - v1.size < v2.x + v2.size &&
+                v1.x + v1.size > v2.x - v2.size &&
+                v1.y - v1.size < v2.y + v2.size &&
+                v1.y + v1.size > v2.y - v2.size
+            );
+        }
+
+        function handleCollision(v1, v2) {
+            const collisionX = (v1.x + v2.x) / 2;
+            const collisionY = (v1.y + v2.y) / 2;
+
+            v1.isActive = false;
+            v2.isActive = false;
+
+            for (let i = 0; i < 20; i++) {
+                const angle = Math.random() * 2 * Math.PI;
+                const speed = Math.random() * 50 + 20;
+                const particleX = collisionX + Math.cos(angle) * speed;
+                const particleY = collisionY + Math.sin(angle) * speed;
+                explosionParticles.push(new ExplosionParticle(particleX, particleY, Math.cos(angle) * 2, Math.sin(angle) * 2, 200));
+            }
+
+            simulationState = 'EXPLODING';
+        }
+
+        function update(deltaTime) {
+            if (simulationState === 'RUNNING') {
+                for (const vehicle of vehicles) {
+                    vehicle.update(deltaTime);
+                }
+
+                // Collision Detection
+                for (let i = 0; i < vehicles.length; i++) {
+                    for (let j = i + 1; j < vehicles.length; j++) {
+                        if (vehicles[i].isActive && vehicles[j].isActive && checkCollision(vehicles[i], vehicles[j])) {
+                            handleCollision(vehicles[i], vehicles[j]);
+                            return; // Exit update after collision to prevent multiple collisions in one frame
+                        }
+                    }
+                }
+            } else if (simulationState === 'EXPLODING') {
+                for (let i = explosionParticles.length - 1; i >= 0; i--) {
+                    explosionParticles[i].update(deltaTime);
+                    if (explosionParticles[i].lifespan <= 0) {
+                        explosionParticles.splice(i, 1);
+                    }
+                }
+
+                if (explosionParticles.length === 0) {
+                    simulationState = 'RESTARTING';
+                    restartTimer = 0;
+                }
+            } else if (simulationState === 'RESTARTING') {
+                restartTimer += deltaTime;
+                if (restartTimer >= restartDuration) {
+                    simulationState = 'RUNNING';
+                    initializeVehicles(8);
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+
+            if (simulationState === 'RUNNING') {
+                for (const vehicle of vehicles) {
+                    vehicle.draw();
+                }
+            } else if (simulationState === 'EXPLODING') {
+                for (const particle of explosionParticles) {
+                    particle.draw();
+                }
+            }
+
+            if (simulationState === 'RESTARTING') {
+                ctx.fillStyle = 'white';
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('BOOM!', width / 2, height / 2);
+            }
+        }
+
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            update(deltaTime);
+            draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        initializeVehicles(8);
+        requestAnimationFrame(gameLoop);
+
+    </script>
+
+    <!-- Optional section for notes -->
+    <section id="notes">
+        Developer notes:
+        - Used classes for Vehicle and ExplosionParticle to encapsulate data and behavior.
+        - Collision detection uses simple rectangle intersection.
+        - Explosion particles have a lifespan and fade out over time.
+        - Simulation state machine controls the flow of the simulation (RUNNING, EXPLODING, RESTARTING).
+        - Delta time is used for smooth animation.
+        - Restarting includes a delay using a timer.
+    </section>
+</body>
+</html>

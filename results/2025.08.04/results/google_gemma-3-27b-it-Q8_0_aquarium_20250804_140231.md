@@ -1,0 +1,114 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #e0f7fa; } /* Light blue background */
+        canvas { display: block; margin: 20px auto; border: 1px solid #888; background-color:rgb(207, 247, 255); } /* blue water */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Fish class
+        class Fish {
+            constructor(x, y, size, color) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.color = color;
+                this.vx = (Math.random() - 0.5) * 2; // Random horizontal velocity
+                this.vy = (Math.random() - 0.5) * 2; // Random vertical velocity
+                this.angle = Math.random() * 2 * Math.PI; // Initial angle
+                this.turnSpeed = Math.random() * 0.02; // How quickly fish turns
+            }
+
+            update(deltaTime) {
+                // Update position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+
+                // Boundary collision detection and response
+                if (this.x < 0 || this.x > W) {
+                    this.vx = -this.vx;
+                    this.angle = Math.PI - this.angle; // Flip angle
+                    this.x = Math.max(0, Math.min(this.x, W)); // Keep within bounds
+                }
+                if (this.y < 0 || this.y > H) {
+                    this.vy = -this.vy;
+                    this.angle = -this.angle; // Flip angle
+                    this.y = Math.max(0, Math.min(this.y, H)); // Keep within bounds
+                }
+
+                // Wandering behavior: slowly change direction
+                this.angle += (Math.random() - 0.5) * this.turnSpeed;
+                this.vx = Math.cos(this.angle);
+                this.vy = Math.sin(this.angle);
+            }
+
+            draw() {
+                ctx.save(); // Save the current drawing state
+                ctx.translate(this.x, this.y); // Move the origin to the fish's position
+                ctx.rotate(this.angle); // Rotate the fish
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size / 2, this.size / 4, 0, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.restore(); // Restore the previous drawing state
+            }
+        }
+
+        // Create fish array
+        const numFish = 15;
+        const fish = [];
+        for (let i = 0; i < numFish; i++) {
+            const size = Math.random() * 20 + 10;
+            const color = `hsl(${Math.random() * 360}, 100%, 50%)`; // Random color
+            fish.push(new Fish(Math.random() * W, Math.random() * H, size, color));
+        }
+
+        // Animation loop
+        let lastTimestamp = 0;
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastTimestamp) / 1000; // Delta time in seconds
+            lastTimestamp = timestamp;
+
+            ctx.clearRect(0, 0, W, H); // Clear the canvas
+
+            // Update and draw fish
+            for (const f of fish) {
+                f.update(deltaTime);
+                f.draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h2>Implementation Notes</h2>
+        <p>This simulation uses a <code>Fish</code> class to represent each fish, encapsulating its position, velocity, size, color, and angle.</p>
+        <p>The <code>update</code> method handles movement, boundary collision detection, and a simple wandering behavior.</p>
+        <p>The <code>draw</code> method uses <code>translate</code> and <code>rotate</code> to orient the fish graphic correctly.</p>
+        <p><code>requestAnimationFrame</code> is used for the animation loop, and delta time is calculated to ensure frame-rate independence.</p>
+        <p>Fish are created with random properties to introduce variation.</p>
+    </section>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: google_gemma-3-27b-it-Q8_0.gguf -->
+<!-- Prompt: aquarium.md -->
+<!-- Generation Time: 49.44s -->
+<!-- Fallback Used: False -->

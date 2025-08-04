@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Autonomous Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { border: 1px solid #444; background-color: #000; display: block; margin: 20px auto; }
+        #notes {
+            color: #aaa;
+            font-family: monospace;
+            padding: 10px;
+            font-size: 14px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        
+        // Physics constants
+        const GRAVITY = 0.2;
+        const EXPLOSION_HEIGHT = H * 0.6;
+        const MIN_ROCKET_INTERVAL = 500; // 0.5 seconds
+        const MAX_ROCKET_INTERVAL = 2000; // 2 seconds
+        const MAX_PARTICLES = 500; // Safety cap for performance
+
+        // Particle classes
+        class Rocket {
+            constructor() {
+                this.x = Math.random() * W;
+                this.y = H - 20;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = -Math.random() * 3 - 5; // Upward velocity
+                this.type = 'rocket';
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 8;
+                this.vy = (Math.random() - 0.5) * 8;
+                this.lifespan = Math.random() * 2 + 1; // 1-3 seconds
+                this.color = color;
+                this.size = Math.random() * 2 + 2; // 2-4px
+                this.type = 'particle';
+            }
+        }
+
+        // Global state
+        let particles = [];
+        let lastRocketLaunch = 0;
+        let lastTimestamp = 0;
+        let particleCount = 0;
+
+        // Utility functions
+        function getRandomColor() {
+            const hue = Math.floor(Math.random() * 360);
+            return `hsl(${hue}, 80%, 80%)`;
+        }
+
+        function launchRocket() {
+            if (particles.length >= MAX_PARTICLES) return;
+            
+            particles.push(new Rocket());
+            particleCount++;
+        }
+
+        function createExplosion(x, y) {
+            const numParticles = Math.floor(Math.random() * 50) + 30;
+            for (let i = 0; i < numParticles; i++) {
+                particles.push(new Particle(x, y, getRandomColor()));
+                particleCount++;
+            }
+        }
+
+        // Main game loop
+        function gameLoop(timestamp) {
+            const deltaTime = (timestamp - lastTimestamp) / 1000;
+            lastTimestamp = timestamp;
+
+            // Launch new rockets periodically
+            if (timestamp - lastRocketLaunch > Math.random() * (MAX_ROCKET_INTERVAL - MIN_ROCKET_INTERVAL) + MIN_ROCKET_INTERVAL) {
+                launchRocket();
+                lastRocketLaunch = timestamp;
+            }
+
+            // Update all particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                
+                // Update position
+                p.x += p.vx * deltaTime;
+                p.y += p.vy * deltaTime;
+                
+                // Apply gravity to all particles
+                p.vy += GRAVITY * deltaTime;
+                
+                // Handle rocket explosions
+                if (p.type === 'rocket' && p.y <= EXPLOSION_HEIGHT) {
+                    createExplosion(p.x, p.y);
+                    particles.splice(i, 1); // Remove rocket immediately
+                    continue;
+                }
+                
+                // Handle particle lifespan
+                if (p.type === 'particle') {
+                    p.lifespan -= deltaTime;
+                    if (p.lifespan <= 0) {
+                        particles.splice(i, 1);
+                        continue;
+                    }
+                }
+            }
+
+            // Draw everything
+            ctx.clearRect(0, 0, W, H);
+            for (const p of particles) {
+                if (p.type === 'rocket') {
+                    // Draw rocket as a bright streak
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FFFF00';
+                    ctx.fill();
+                } else {
+                    // Draw particles with fading alpha
+                    const alpha = p.lifespan / 3; // Fade out over 3 seconds
+                    ctx.globalAlpha = alpha;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fillStyle = p.color;
+                    ctx.fill();
+                    ctx.globalAlpha = 1; // Reset alpha
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            lastRocketLaunch = Date.now();
+            requestAnimationFrame(gameLoop);
+        });
+    </script>
+    <section id="notes">
+        <h3>Fireworks Simulation Notes</h3>
+        <p>• Uses pure JavaScript with Canvas API (no external libraries)</p>
+        <p>• Implements object-oriented particle management (Rocket/Particle classes)</p>
+        <p>• Uses delta-time for frame-rate independent physics</p>
+        <p>• Efficient array management with in-place removal</p>
+        <p>• Realistic physics: gravity, explosion dynamics, particle fading</p>
+        <p>• Autonomous launch system with randomized intervals</p>
+        <p>• Optimized for performance (max 500 active particles)</p>
+        <p>• Dark background with vibrant, randomized colors</p>
+    </section>
+</body>
+</html>

@@ -1,0 +1,154 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chicken Simulation</title>
+    <style>
+        body { margin: 10px; overflow: hidden; background-color: #eee; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #999; background-color: #90ee90; } /* Light green grass background */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        // --- YOUR JAVASCRIPT CODE GOES HERE ---
+        // Setup canvas, context, chicken object, egg array, animation loop, etc.
+
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // Chicken class
+        class Chicken {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.direction = 0; // Angle in radians (0: right, pi/2: down, pi: left, 3pi/2: up)
+                this.speed = 2;
+                this.state = 'wandering';
+                this.layingTimer = 0;
+                this.layingDuration = 50; // milliseconds
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 20, 0, 2 * Math.PI); // Simple circle for the body
+                ctx.fillStyle = 'red'; //Beak
+                ctx.closePath();
+            }
+
+            update() {
+                if (this.state === 'laying') {
+                    this.layingTimer++;
+                    if (this.layingTimer >= this.layingDuration) {
+                        this.state = 'wandering';
+                        this.layingTimer = 0;
+                    }
+                }
+
+                // Wandering AI
+                if (this.state === 'wandering') {
+                    this.direction += (Math.random() - 0.5) * 0.5; // Slight random change in direction
+                    this.speed += (Math.random() - 0.5) * 0.5; // Slight random change in speed
+
+                    // Boundary handling
+                    if (this.x < 0) {
+                        this.x = 0;
+                        this.direction = Math.PI * 2 - this.direction;
+                    } else if (this.x > width) {
+                        this.x = width;
+                        this.direction = Math.PI * 2 - this.direction;
+                    }
+                    if (this.y < 0) {
+                        this.y = 0;
+                        this.direction = -this.direction;
+                    } else if (this.y > height) {
+                        this.y = height;
+                        this.direction = -this.direction;
+                    }
+                }
+            }
+        }
+
+        // Egg class
+        class Egg {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, 15, 10, 0, 0, 2 * Math.PI); // Oval shape
+                ctx.fillStyle = 'white';
+                ctx.closePath();
+            }
+        }
+
+        // Game state
+        let chicken;
+        let eggs = [];
+        let laying = false;
+        let animationFrameId;
+        let delta = 0;
+
+        // Initialize chicken
+        chicken = new Chicken(width / 2, height / 2);
+
+
+        function gameLoop() {
+            delta = (Date.now() - (Date.now() - animationFrameId));
+
+            chicken.update();
+
+            // Lay an egg periodically
+            if (Math.random() < 0.02 && chicken.state === 'wandering' && !laying) { // 2% chance to lay
+                laying = true;
+                chicken.state = 'laying';
+                setTimeout(() => {
+                    laying = false;
+                    chicken.state = 'wandering';
+                }, chicken.layingDuration);
+            }
+
+
+            // Draw everything
+            ctx.clearRect(0, 0, width, height);
+
+            chicken.draw();
+
+            for (const egg of eggs) {
+                egg.draw();
+            }
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game
+        gameLoop();
+    </script>
+
+    <!-- Optional section for notes -->
+    <section id="notes">
+        Developer notes regarding the simulation logic, AI choices, etc.
+        <br><br>
+        **Implementation Notes:**
+        <ul>
+            <li>Uses a simple circle for the chicken's body and a red circle for the beak.</li>
+            <li>Chicken's movement is a basic wandering AI with random direction changes.</li>
+            <li>Egg laying is triggered randomly with a 2% probability and a brief laying animation.</li>
+            <li>Uses `requestAnimationFrame` for smooth animation and delta time for frame-rate independence.</li>
+        </ul>
+    </section>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: gemma-3n-E4B-it-UD-Q4_K_XL.gguf -->
+<!-- Prompt: chicken.md -->
+<!-- Generation Time: 13.95s -->
+<!-- Fallback Used: False -->

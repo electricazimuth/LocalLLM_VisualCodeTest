@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explosion Effect</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas to full window size
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Vehicle object
+        function Vehicle(x, y) {
+            this.x = x;
+            this.y = y;
+            this.radius = 15;
+            this.speed = 2;
+            this.direction = Math.random() * 2 * Math.PI;
+        }
+
+        // Explosion particle
+        function ExplosionParticle(x, y) {
+            this.x = x;
+            this.y = y;
+            this.velocityX = Math.random() * 200 - 100; // pixels per second
+            this.velocityY = Math.random() * 200 - 100;
+            this.lifespan = Math.random() * 2.0 + 1.0; // 1 to 3 seconds
+            this.size = Math.random() * 10 + 5;
+            this.color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+        }
+
+        // Game state variables
+        let vehicles = [];
+        let explosionParticles = [];
+        let simulationState = 'RUNNING'; // 'RUNNING', 'EXPLODING', 'RESTARTING'
+        let explosionCenter = { x: 0, y: 0 };
+        let explosionStartTime = 0;
+        let restartTimer = null;
+
+        // Initialize game
+        function init() {
+            vehicles = [];
+            explosionParticles = [];
+            simulationState = 'RUNNING';
+
+            // Create vehicles
+            for (let i = 0; i < 10; i++) {
+                vehicles.push(new Vehicle(
+                    Math.random() * canvas.width,
+                    Math.random() * canvas.height
+                ));
+            }
+        }
+
+        // Update game state
+        function update(dt) {
+            switch (simulationState) {
+                case 'RUNNING':
+                    // Update vehicles
+                    for (let vehicle of vehicles) {
+                        vehicle.x += Math.cos(vehicle.direction) * vehicle.speed;
+                        vehicle.y += Math.sin(vehicle.direction) * vehicle.speed;
+
+                        // Bounce off walls
+                        if (vehicle.x < 0 || vehicle.x > canvas.width) {
+                            vehicle.direction = Math.PI - vehicle.direction;
+                        }
+                        if (vehicle.y < 0 || vehicle.y > canvas.height) {
+                            vehicle.direction = Math.PI - vehicle.direction;
+                        }
+
+                        // Check for collisions with other vehicles
+                        for (let other of vehicles) {
+                            if (vehicle !== other) {
+                                const dx = vehicle.x - other.x;
+                                const dy = vehicle.y - other.y;
+                                const distance = Math.sqrt(dx * dx + dy * dy);
+                                if (distance < vehicle.radius + other.radius) {
+                                    // Collision detected
+                                    handleCollision(vehicle, other);
+                                }
+                            }
+                        }
+                    }
+                    break;
+
+                case 'EXPLODING':
+                    // Update explosion particles
+                    for (let i = explosionParticles.length - 1; i >= 0; i--) {
+                        explosionParticles[i].x += explosionParticles[i].velocityX * dt;
+                        explosionParticles[i].y += explosionParticles[i].velocityY * dt;
+                        explosionParticles[i].lifespan -= dt;
+                        if (explosionParticles[i].lifespan <= 0) {
+                            explosionParticles.splice(i, 1);
+                        }
+                    }
+                    break;
+
+                case 'RESTARTING':
+                    // Wait for restart
+                    if (!restartTimer) {
+                        restartTimer = setTimeout(() => {
+                            init();
+                            simulationState = 'RUNNING';
+                            restartTimer = null;
+                        }, 3000);
+                    }
+                    break;
+            }
+        }
+
+        // Draw game
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            switch (simulationState) {
+                case 'RUNNING':
+                    // Draw vehicles
+                    for (let vehicle of vehicles) {
+                        ctx.beginPath();
+                        ctx.arc(vehicle.x, vehicle.y, vehicle.radius, 0, Math.PI * 2);
+                        ctx.fillStyle = 'blue';
+                        ctx.fill();
+                    }
+                    break;
+
+                case 'EXPLODING':
+                    // Draw explosion particles
+                    for (let particle of explosionParticles) {
+                        ctx.beginPath();
+                        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                        ctx.fillStyle = particle.color;
+                        ctx.fill();
+                    }
+
+                    // Draw BOOM text
+                    drawExplosionText();
+                    break;
+
+                case 'RESTARTING':
+                    // Canvas is cleared, nothing drawn
+                    break;
+            }
+        }
+
+        // Handle collision
+        function handleCollision(vehicle1, vehicle2) {
+            // Set explosion center to midpoint of collision
+            explosionCenter.x = (vehicle1.x + vehicle2.x) / 2;
+            explosionCenter.y = (vehicle1.y + vehicle2.y) / 2;
+            explosionStartTime = performance.now();
+
+            // Create explosion particles
+            for (let i = 0; i < 50; i++) {
+                explosionParticles.push(new ExplosionParticle(explosionCenter.x, explosionCenter.y));
+            }
+
+            // Transition to EXPLODING state
+            simulationState = 'EXPLODING';
+        }
+
+        // Draw BOOM text
+        function drawExplosionText() {
+            const currentTime = performance.now();
+            const elapsed = (currentTime - explosionStartTime) / 1000; // seconds
+            const maxSize = 64;
+            const maxSizeTime = 1.0; // reach max size in 1 second
+            let sizeScale = Math.min(elapsed / maxSizeTime, 1);
+            let size = sizeScale * maxSize;
+            let opacity = 1 - Math.min(elapsed / 3.0, 1); // fade out over 3 seconds
+
+            ctx.font = `${size}px Arial`;
+            ctx.fillStyle = `rgba(255, 0, 0, ${opacity})`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('BOOM', explosionCenter.x, explosionCenter.y);
+        }
+
+        // Check if explosion is over
+        function checkExplosionEnd() {
+            const currentTime = performance.now();
+            const elapsed = currentTime - explosionStartTime;
+            if (elapsed >= 3000) { // 3 seconds
+                simulationState = 'RESTARTING';
+            }
+        }
+
+        // Game loop
+        function gameLoop(timestamp) {
+            // Calculate delta time
+            let dt = timestamp - (gameLoop.lastTimestamp || timestamp);
+            gameLoop.lastTimestamp = timestamp;
+
+            update(dt / 1000); // Convert to seconds
+            draw();
+
+            // Check explosion end
+            if (simulationState === 'EXPLODING') {
+                checkExplosionEnd();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game
+        init();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

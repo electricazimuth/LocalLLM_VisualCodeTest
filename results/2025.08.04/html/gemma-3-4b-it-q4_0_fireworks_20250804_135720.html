@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111; /* Dark background suggested */
+        }
+
+        canvas {
+            border: 1px solid #444;
+            background-color: #000;
+            display: block;
+            margin: 20px auto;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Fireworks Object ---
+        class Rocket {
+            constructor(x, y, vx, vy, fuseTime, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.fuseTime = fuseTime;
+                this.lifespan = fuseTime;
+                this.color = color;
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                this.vy -= 0.5 * deltaTime; // Gravity
+                this.lifespan -= deltaTime;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 8, 0, Math.PI * 2, false);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            explode(explosionParticles) {
+                // Remove rocket
+                this.lifespan = 0;
+                // Create explosion particles
+                for (let i = 0; i < 40; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 5 + 2;
+                    explosionParticles.push({
+                        x: this.x,
+                        y: this.y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        lifespan: Math.random() * 1.5 + 0.5,
+                        color: this.color,
+                        size: Math.random() * 2 + 1,
+                    });
+                }
+            }
+        }
+
+        // --- Explosion Particle Object ---
+        class ExplosionParticle {
+            constructor(x, y, vx, vy, lifespan, color, size) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.lifespan = lifespan;
+                this.color = color;
+                this.size = size;
+            }
+
+            update(deltaTime) {
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                this.vy -= 0.8 * deltaTime; // Gravity
+                this.lifespan -= deltaTime;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = this.lifespan / 2; // Fade out
+                ctx.fill();
+                ctx.globalAlpha = 1; // Reset alpha
+                ctx.closePath();
+            }
+        }
+
+        // --- Game Variables ---
+        let particles = [];
+        let nextLaunchTime = Math.random() * 1.5 + 0.5;
+        let explosionParticles = [];
+        let deltaTime = 0;
+
+        function gameLoop(timestamp) {
+            deltaTime = (timestamp - lastTimestamp) / 60; // Calculate deltaTime
+            lastTimestamp = timestamp;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Launch fireworks
+            if (timestamp > nextLaunchTime) {
+                const launchX = W / 2 + Math.random() * 100;
+                const launchY = 0;
+                const launchVx = (Math.random() - 0.5) * 2;
+                const launchVy = -8; // Initial upwards velocity
+                const fuseTime = Math.random() * 1 + 0.5;
+                const color = '#' + Math.floor(Math.random() * 16777215).toString(16);
+
+                particles.push(new Rocket(launchX, launchY, launchVx, launchVy, fuseTime, color));
+                nextLaunchTime = timestamp + Math.random() * 1.5 + 0.5;
+            }
+
+            // Update and draw particles
+            particles.forEach(particle => {
+                particle.update(deltaTime);
+                particle.draw(ctx);
+            });
+
+            explosionParticles.forEach(particle => {
+                particle.update(deltaTime);
+                particle.draw(ctx);
+            });
+
+            // Remove dead particles
+            particles = particles.filter(particle => particle.lifespan > 0);
+            explosionParticles = explosionParticles.filter(particle => particle.lifespan > 0);
+
+            // Request next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game loop
+        gameLoop(0);
+    </script>
+</body>
+</html>

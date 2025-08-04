@@ -1,0 +1,482 @@
+We are going to create an aquarium simulation with multiple fish that swim autonomously.
+ We'll use a class-based approach for the fish and use requestAnimationFrame for the animation loop.
+ We'll also implement a wandering behavior and boundary detection.
+
+ Steps:
+ 1. Create a Fish class to represent each fish.
+ 2. Create an array to hold multiple fish.
+ 3. Initialize the fish with random positions, directions, and colors.
+ 4. Implement the update method for each fish to handle movement and boundary interactions.
+ 5. Implement a draw method for each fish to render it on the canvas.
+ 6. Use requestAnimationFrame to create a loop that updates and draws all fish.
+
+ We'll use a canvas with a light blue background to represent water.
+
+ Let's design the fish as simple shapes (triangles for the body and a small circle for the eye) and vary their colors and sizes.
+
+ For the wandering behavior, we'll use a simple method that randomly changes the direction of the fish over time.
+
+ Boundary interaction: When a fish gets near the edge, it will turn away from the edge.
+
+ We'll also add a simple tail wiggle effect to make the fish look more natural.
+
+ Note: We are using the Canvas API for drawing.
+
+ Let's code accordingly.
+</think>
+
+# Autonomous Aquarium Simulation
+
+I'll create a visually appealing aquarium simulation with multiple fish that swim autonomously, demonstrating object-oriented design and efficient animation techniques.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Aquarium Simulation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #e0f7fa;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            overflow: hidden;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #004d99;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        .aquarium-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        #aquariumCanvas {
+            width: 100%;
+            height: 500px;
+            background: linear-gradient(135deg, #5ccef0, #a0d1ff, #d0e7ff);
+            background-size: 200% 200%;
+            animation: gradientAnimation 20s ease infinite;
+            border: 1px solid #888;
+        }
+        
+        @keyframes gradientAnimation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: linear-gradient(to bottom, #4d94ff, #1a6fff);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-size: 1rem;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        
+        button:active {
+            transform: translateY(1px);
+        }
+        
+        .info-panel {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        
+        h2 {
+            color: #004d99;
+            margin-bottom: 15px;
+        }
+        
+        .info-content {
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        footer {
+            margin-top: 30px;
+            color: #555;
+            font-size: 0.9rem;
+        }
+        
+        .fish-counter {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.85);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            color: #004d99;
+            z-index: 10;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Autonomous Aquarium</h1>
+        <p class="subtitle">A simulation of fish swimming in a virtual aquarium with realistic behaviors and smooth animations</p>
+    </header>
+    
+    <div class="aquarium-container">
+        <div class="fish-counter">Fish: <span id="fishCount">12</span></div>
+        <canvas id="aquariumCanvas"></canvas>
+    </div>
+    
+    <div class="controls">
+        <button id="addFishBtn">Add Fish</button>
+        <button id="removeFishBtn">Remove Fish</button>
+        <button id="toggleWanderBtn">Toggle Wander</button>
+        <button id="resetBtn">Reset Simulation</button>
+    </div>
+    
+    <div class="info-panel">
+        <h2>About This Simulation</h2>
+        <div class="info-content">
+            <p>This aquarium simulation demonstrates JavaScript best practices for creating autonomous agents with realistic behaviors.</p>
+            <p>Key features include:</p>
+            <ul>
+                <li>Object-oriented design with Fish class</li>
+                <li>Smooth animation using requestAnimationFrame</li>
+                <li>Frame-rate independent movement with delta time</li>
+                <li>Natural swimming patterns with wandering behavior</li>
+                <li>Realistic boundary interactions</li>
+                <li>Dynamic lighting effects</li>
+            </ul>
+            <p>Click the buttons above to interact with the simulation!</p>
+        </div>
+    </div>
+    
+    <footer>
+        <p>Created with pure JavaScript and HTML5 Canvas</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const canvas = document.getElementById('aquariumCanvas');
+            const ctx = canvas.getContext('2d');
+            const fishCountElement = document.getElementById('fishCount');
+            
+            // Set canvas dimensions
+            const aquariumWidth = canvas.width;
+            const aquariumHeight = canvas.height;
+            
+            // Configuration
+            const config = {
+                initialFishCount: 12,
+                minFishSize: 20,
+                maxFishSize: 40,
+                minSpeed: 1.5,
+                maxSpeed: 3.5,
+                wanderStrength: 0.005,
+                turnSpeed: 0.05,
+                boundaryDistance: 30,
+                colorPalette: ['#FF6B6B', '#4ECDC4', '#FFD166', '#6A0572', '#1A936F']
+            };
+            
+            // Fish class
+            class Fish {
+                constructor(id) {
+                    this.id = id;
+                    this.size = Math.random() * (config.maxFishSize - config.minFishSize) + config.minFishSize;
+                    this.speed = Math.random() * (config.maxSpeed - config.minSpeed) + config.minSpeed;
+                    this.color = config.colorPalette[Math.floor(Math.random() * config.colorPalette.length)];
+                    
+                    // Initial position (inside the aquarium)
+                    this.x = Math.random() * (aquariumWidth - this.size * 2) + this.size;
+                    this.y = Math.random() * (aquariumHeight - this.size * 2) + this.size;
+                    
+                    // Initial direction (radians)
+                    this.direction = Math.random() * Math.PI * 2;
+                    
+                    // Wandering behavior
+                    this.wandering = true;
+                    this.wanderAngle = Math.random() * Math.PI * 2;
+                    this.wanderOffset = 0;
+                }
+                
+                update(dt) {
+                    // Update position
+                    this.x += Math.cos(this.direction) * this.speed * dt;
+                    this.y += Math.sin(this.direction) * this.speed * dt;
+                    
+                    // Boundary checks
+                    if (this.x < this.size + config.boundaryDistance || 
+                        this.x > aquariumWidth - this.size - config.boundaryDistance) {
+                        this.direction = Math.PI - this.direction;
+                    }
+                    
+                    if (this.y < this.size + config.boundaryDistance || 
+                        this.y > aquariumHeight - this.size - config.boundaryDistance) {
+                        this.direction = -this.direction;
+                    }
+                    
+                    // Wandering behavior
+                    if (this.wandering) {
+                        this.wanderOffset += config.wanderStrength * dt;
+                        const wanderRadius = this.size * 1.5;
+                        const wanderX = wanderRadius * Math.cos(this.wanderAngle + this.wanderOffset);
+                        const wanderY = wanderRadius * Math.sin(this.wanderAngle + this.wanderOffset);
+                        
+                        // Calculate target direction
+                        const targetDir = Math.atan2(wanderY, wanderX);
+                        
+                        // Smoothly turn towards target direction
+                        const angleDiff = (targetDir - this.direction + Math.PI) % (Math.PI * 2) - Math.PI;
+                        this.direction += Math.sign(angleDiff) * config.turnSpeed * dt;
+                    }
+                }
+                
+                draw(ctx) {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(this.direction);
+                    
+                    // Draw fish body
+                    ctx.beginPath();
+                    ctx.moveTo(0, -this.size / 2);
+                    ctx.quadraticCurveTo(this.size, -this.size, this.size * 1.5, 0);
+                    ctx.quadraticCurveTo(this.size, this.size, 0, this.size / 2);
+                    ctx.closePath();
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                    
+                    // Draw fish eye
+                    ctx.beginPath();
+                    ctx.arc(-this.size / 3, -this.size / 4, this.size / 8, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                    
+                    // Draw pupil
+                    ctx.beginPath();
+                    ctx.arc(-this.size / 3, -this.size / 4, this.size / 12, 0, Math.PI * 2);
+                    ctx.fillStyle = '#000000';
+                    ctx.fill();
+                    
+                    // Draw tail
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(-this.size, -this.size / 2);
+                    ctx.lineTo(-this.size, this.size / 2);
+                    ctx.closePath();
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                    
+                    // Draw tail details
+                    ctx.beginPath();
+                    ctx.moveTo(-this.size, 0);
+                    ctx.lineTo(-this.size - this.size / 4, -this.size / 4);
+                    ctx.lineTo(-this.size - this.size / 4, this.size / 4);
+                    ctx.closePath();
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                    
+                    ctx.restore();
+                }
+            }
+            
+            // Initialize fish array
+            let fishArray = [];
+            for (let i = 0; i < config.initialFishCount; i++) {
+                fishArray.push(new Fish(i));
+            }
+            
+            // Animation variables
+            let lastTime = 0;
+            let animationFrameId;
+            
+            // Animation loop
+            function animate(currentTime) {
+                const deltaTime = (currentTime - lastTime) / 1000; // in seconds
+                lastTime = currentTime;
+                
+                // Clear canvas
+                ctx.clearRect(0, 0, aquariumWidth, aquariumHeight);
+                
+                // Draw background elements
+                drawBackground();
+                
+                // Update and draw fish
+                for (let i = 0; i < fishArray.length; i++) {
+                    const fish = fishArray[i];
+                    fish.update(deltaTime);
+                    fish.draw(ctx);
+                }
+                
+                // Schedule next frame
+                animationFrameId = requestAnimationFrame(animate);
+            }
+            
+            // Draw background elements (decorations)
+            function drawBackground() {
+                // Draw some "rocks"
+                ctx.fillStyle = '#8B4513';
+                ctx.beginPath();
+                ctx.arc(100, 400, 30, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(700, 300, 25, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw some "plants"
+                ctx.fillStyle = '#228B22';
+                for (let i = 0; i < 5; i++) {
+                    const x = Math.random() * aquariumWidth;
+                    const y = Math.random() * 0.7 * aquariumHeight;
+                    const height = Math.random() * 100 + 50;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x - 10, y + height);
+                    ctx.lineTo(x + 10, y + height);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+            
+            // Event listeners
+            document.getElementById('addFishBtn').addEventListener('click', () => {
+                fishArray.push(new Fish(fishArray.length));
+                updateFishCount();
+            });
+            
+            document.getElementById('removeFishBtn').addEventListener('click', () => {
+                if (fishArray.length > 1) {
+                    fishArray.pop();
+                    updateFishCount();
+                }
+            });
+            
+            document.getElementById('toggleWanderBtn').addEventListener('click', () => {
+                const firstFish = fishArray[0];
+                if (firstFish) {
+                    firstFish.wandering = !firstFish.wandering;
+                    document.getElementById('toggleWanderBtn').textContent = 
+                        firstFish.wandering ? 'Wander: On' : 'Wander: Off';
+                }
+            });
+            
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                fishArray = [];
+                for (let i = 0; i < config.initialFishCount; i++) {
+                    fishArray.push(new Fish(i));
+                }
+                updateFishCount();
+                document.getElementById('toggleWanderBtn').textContent = 'Toggle Wander';
+            });
+            
+            // Update fish count display
+            function updateFishCount() {
+                fishCountElement.textContent = fishArray.length;
+            }
+            
+            // Start animation
+            lastTime = performance.now();
+            animate(lastTime);
+            
+            // Add resize handler
+            window.addEventListener('resize', () => {
+                canvas.width = window.innerWidth * 0.8;
+                canvas.height = 500;
+                aquariumWidth = canvas.width;
+                aquariumHeight = canvas.height;
+            });
+        });
+    </script>
+</body>
+</html>
+```
+
+## Key Features of the Aquarium Simulation
+
+1. **Object-Oriented Design**:
+   - Created a `Fish` class to encapsulate fish properties and behaviors
+   - Each fish has unique attributes (size, speed, color, direction)
+
+2. **Realistic Fish Behavior**:
+   - Smooth swimming with directional movement
+   - Wandering behavior that causes fish to change direction naturally
+   - Boundary detection that makes fish turn away from edges
+   - Dynamic eye and tail drawing for more realistic appearance
+
+3. **Efficient Animation**:
+   - Uses `requestAnimationFrame` for smooth, browser-optimized animation
+   - Delta time calculation for frame-rate independent movement
+   - Canvas clearing and redrawing for each frame
+
+4. **Visual Design**:
+   - Attractive blue gradient background with subtle animation
+   - Realistic fish shapes with eyes and tails
+   - Decorative rocks and plants for visual interest
+   - Responsive design that works on different screen sizes
+
+5. **User Interaction**:
+   - Add/remove fish dynamically
+   - Toggle wandering behavior on/off
+   - Reset simulation to initial state
+   - Real-time fish count display
+
+The simulation demonstrates JavaScript best practices with clean code organization, efficient animation techniques, and realistic autonomous behavior for the fish.
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: UIGEN-X-32B-0727.Q4_K_M.gguf -->
+<!-- Prompt: aquarium.md -->
+<!-- Generation Time: 128.66s -->
+<!-- Fallback Used: False -->

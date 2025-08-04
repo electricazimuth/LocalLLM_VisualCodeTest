@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Ball class
+        class Ball {
+            constructor(x, y, r, color, number) {
+                this.x = x;
+                this.y = y;
+                this.r = r;
+                this.color = color;
+                this.vx = 0;
+                this.vy = 0;
+                this.mass = 1;
+                this.number = number;
+                this.rotation = 0;
+                this.rotationSpeed = (Math.random() - 0.5) * 0.02;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.r, 0, 2 * Math.PI);
+                ctx.fill();
+
+                ctx.font = "12px Arial";
+                ctx.fillStyle = "black";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(this.number, 0, 0);
+
+                ctx.restore();
+            }
+
+            update() {
+                this.vy += gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+                this.rotation += this.rotationSpeed;
+
+                //Damping
+                this.vx *= friction;
+                this.vy *= friction;
+            }
+        }
+
+        // Heptagon class
+        class Heptagon {
+            constructor(x, y, radius) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.vertices = [];
+                this.angle = 0;
+                this.rotationSpeed = 360 / (5 * 60); // 360 degrees in 5 seconds
+                this.createVertices();
+            }
+
+            createVertices() {
+                for (let i = 0; i < 7; i++) {
+                    const angle = (2 * Math.PI * i) / 7;
+                    const x = this.x + this.radius * Math.cos(angle);
+                    const y = this.y + this.radius * Math.sin(angle);
+                    this.vertices.push({ x, y });
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.moveTo(this.vertices[0].x, this.vertices[0].y);
+                for (let i = 1; i < this.vertices.length; i++) {
+                    ctx.lineTo(this.vertices[i].x, this.vertices[i].y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            rotate() {
+                this.angle += this.rotationSpeed;
+                this.vertices = [];
+                this.createVertices();
+                //rotate the vertices around the center
+                for(let i = 0; i < this.vertices.length; i++){
+                    let angle = this.angle;
+                    let x = this.x + this.radius * Math.cos(angle + (2 * Math.PI * i) / 7);
+                    let y = this.y + this.radius * Math.sin(angle + (2 * Math.PI * i) / 7);
+                    this.vertices[i] = {x, y};
+                }
+            }
+        }
+
+        // Constants
+        const gravity = 0.2;
+        const damping = 0.8;
+        const friction = 0.98;
+        const ballRadius = 15;
+        const numBalls = 20;
+        const colors = ["#f8b862", "#f6ad49", "#f39800", "#f08300", "#ec6d51", "#ee7948", "#ed6d3d", "#ec6800", "#ec6800", "#ee7800", "#eb6238", "#ea5506", "#ea5506", "#eb6101", "#e49e61", "#e45e32", "#e17b34", "#dd7a56", "#db8449", "#d66a35"];
+
+        // Initialize balls
+        const balls = [];
+        const heptagon = new Heptagon(W / 2, H / 2, 150);
+        for (let i = 0; i < numBalls; i++) {
+            const x = W / 2;
+            const y = H / 2;
+            const ball = new Ball(x, y, ballRadius, colors[i % colors.length], i + 1);
+            ball.vx = (Math.random() - 0.5) * 5;
+            ball.vy = (Math.random() - 0.5) * 5;
+            balls.push(ball);
+        }
+
+        // Collision detection function
+        function detectCollision(ball1, ball2) {
+            const dx = ball1.x - ball2.x;
+            const dy = ball1.y - ball2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < ball1.r + ball2.r;
+        }
+
+        // Collision response function
+        function resolveCollision(ball1, ball2) {
+            const dx = ball1.x - ball2.x;
+            const dy = ball1.y - ball2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const overlap = ball1.r + ball2.r - distance;
+
+            const nx = dx / distance;
+            const ny = dy / distance;
+
+            const impulse = (1 + damping) * (ball1.vx - ball2.vx) * nx + (ball1.vy - ball2.vy) * ny;
+
+            ball1.vx += impulse / ball1.mass * nx;
+            ball1.vy += impulse / ball1.mass * ny;
+            ball2.vx -= impulse / ball2.mass * nx;
+            ball2.vy -= impulse / ball2.mass * ny;
+
+            // Move balls apart to avoid sticking
+            ball1.x -= overlap / 2 * nx;
+            ball1.y -= overlap / 2 * ny;
+            ball2.x += overlap / 2 * nx;
+            ball2.y += overlap / 2 * ny;
+        }
+
+        // Wall collision detection and response
+        function checkWallCollision(ball) {
+            if (ball.x + ball.r > W || ball.x - ball.r < 0) {
+                ball.vx = -ball.vx * damping;
+                ball.x = Math.max(ball.r, Math.min(ball.x, W - ball.r));
+            }
+            if (ball.y + ball.r > H || ball.y - ball.r < 0) {
+                ball.vy = -ball.vy * damping;
+                ball.y = Math.max(ball.r, Math.min(ball.y, H - ball.r));
+            }
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            heptagon.rotate();
+            heptagon.draw();
+
+            for (let i = 0; i < balls.length; i++) {
+                const ball = balls[i];
+                ball.update();
+                checkWallCollision(ball);
+
+                // Ball-to-ball collision detection
+                for (let j = i + 1; j < balls.length; j++) {
+                    const otherBall = balls[j];
+                    if (detectCollision(ball, otherBall)) {
+                        resolveCollision(ball, otherBall);
+                    }
+                }
+                ball.draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+
+    </script>
+    <section id="notes">
+        <p>This code simulates bouncing balls within a rotating heptagon.</p>
+        <p>Key features:</p>
+        <ul>
+            <li><b>Ball Class:</b> Represents each ball with properties like position, velocity, radius, color, and number.</li>
+            <li><b>Heptagon Class:</b> Represents the container, handles rotation, and drawing.</li>
+            <li><b>Physics:</b> Gravity, damping, and friction are applied to the balls.</li>
+            <li><b>Collision Detection:</b> Detects collisions between balls and the heptagon walls.</li>
+            <li><b>Collision Response:</b>  Resolves collisions by reversing velocities with damping.</li>
+            <li><b>Animation Loop:</b> Uses requestAnimationFrame for smooth animation.</li>
+        </ul>
+        <p>Optimization: Naive collision detection (O(n^2)).  More advanced spatial partitioning techniques (e.g., quadtrees) could be implemented for better performance with a larger number of balls.</p>
+    </section>
+</body>
+</html>

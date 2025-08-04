@@ -1,0 +1,227 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Psychedelic Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <script>
+        // --- WebGL Setup ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        // Clear the canvas
+        gl.clearColor(0, 0, 0, 1);
+        gl.depthTestEnabled();
+
+        // --- Shader Code ---
+        const vertexShaderCode = `
+            precision mediump float;
+
+            attribute vec3 aPos;
+
+            void main() {
+                gl_Position = vec4(aPos, 1.0);
+            }
+        `;
+
+        const fragmentShaderCode = `
+            precision mediump float;
+
+            uniform float time;
+            uniform vec2 screenSize;
+
+            // SDF parameters for metaballs
+            uniform float k = 1.0; // Smoothness factor
+            uniform float metaball1Radius = 1.0;
+            uniform float metaball2Radius = 1.5;
+            uniform float metaball3Radius = 2.0;
+
+            // Position and color for metaballs (will be updated from JS)
+            uniform vec3 metaball1Position;
+            uniform vec3 metaball2Position;
+            uniform vec3 metaball3Position;
+            uniform vec3 metaball1Color;
+            uniform vec3 metaball2Color;
+            uniform vec3 metaball3Color;
+
+            // Ray marching parameters
+            uniform float maxDistance = 10.0;
+            uniform int maxSteps = 64;
+
+            // Function to calculate SDF (Sphere)
+            float sdf(vec3 p, float r) {
+                return length(p) - r;
+            }
+
+            // Smooth minimum function
+            float smin(float a, float b, float k) {
+                return -log(exp(-k * a) + exp(-k * b)) / k;
+            }
+
+            // Ray marching function
+            float rayMarch(vec3 origin, vec3 direction) {
+                float t = 0.0;
+                float stepSize = 0.1;
+                float maxSteps = 0.0;
+
+                for (int i = 0; i < int(maxSteps); ++i) {
+                    vec3 pos = origin + direction * t;
+                    float dist = sdf(pos, max(metaball1Radius, max(metaball2Radius, metaball3Radius)));
+
+                    if (dist < stepSize) {
+                        return t;
+                    }
+                    t += stepSize;
+                }
+                return maxDistance;
+            }
+
+            void main() {
+                vec2 uv = gl_FragCoord.xy / screenSize;
+                vec3 rayOrigin = vec3(uv * 2.0 - 1.0, 0.5, 0.0); // Camera at the origin
+                vec3 rayDirection = normalize(vec3(uv.x * 2.0 - 1.0, 1.0, 0.0)); // Forward direction
+
+                float t = rayMarch(rayOrigin, rayDirection);
+
+                if (t < maxDistance) {
+                    vec3 hitPoint = rayOrigin + rayDirection * t;
+
+                    // Calculate normal (approximate)
+                    vec3 normal = normalize(hitPoint - metaball1Position); // Simple approximation
+
+                    // Sample color based on closest metaball
+                    float dist1 = distance(hitPoint, metaball1Position);
+                    float dist2 = distance(hitPoint, metaball2Position);
+                    float dist3 = distance(hitPoint, metaball3Position);
+
+                    vec3 closestColor = vec3(0.0);
+                    float closestDist = dist1;
+                    if (dist2 < closestDist) {
+                        closestDist = dist2;
+                        closestColor = metaball2Color;
+                    }
+                    if (dist3 < closestDist) {
+                        closestColor = metaball3Color;
+                    }
+
+                    gl_FragColor = vec4(closestColor, 1.0);
+                } else {
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); // Background color
+                }
+            }
+        `;
+
+        // Compile and link shaders
+        const vertexProgram = gl.createProgram();
+        const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertexShader, vertexShaderCode);
+        gl.compileShader(vertexShader);
+        if (!gl.getShaderParameter(vertexShader, gl.VALIDATE_STATUS)) {
+            alert("Vertex shader validation failed!");
+            throw new Error("Vertex shader error");
+        }
+        gl.attachShader(vertexProgram, vertexShader);
+
+        const fragmentProgram = gl.createProgram();
+        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragmentShader, fragmentShaderCode);
+        gl.compileShader(fragmentShader);
+        if (!gl.getShaderParameter(fragmentShader, gl.VALIDATE_STATUS)) {
+            alert("Fragment shader validation failed!");
+            throw new Error("Fragment shader error");
+        }
+        gl.attachShader(fragmentProgram, fragmentShader);
+        gl.linkProgram(fragmentProgram);
+        if (!gl.getProgramParameter(fragmentProgram, gl.VALIDATE_STATUS)) {
+            alert("Program validation failed!");
+            throw new Error("Program error");
+        }
+
+        // --- Vertex Buffer ---
+        const vertices = [
+            // Example metaball positions (can be dynamically updated)
+            vec3(-1.0, 0.0, 1.0),
+            vec3(1.0, 0.0, -1.0),
+            vec3(0.0, 1.0, 0.0)
+        ];
+        const vertexBuffer = gl.createBuffer();
+        gl.bufferData(vertexBuffer, vertices.length * 3 * 4, gl.FLOAT, 0);
+
+        // --- Uniforms ---
+        const timeUniform = gl.getUniformLocation(vertexProgram, 'time');
+        const screenSizeUniform = gl.getUniformLocation(vertexProgram, 'screenSize');
+        const kUniform = gl.getUniformLocation(fragmentProgram, 'k');
+        const metaball1RadiusUniform = gl.getUniformLocation(fragmentProgram, 'metaball1Radius');
+        const metaball2RadiusUniform = gl.getUniformLocation(fragmentProgram, 'metaball2Radius');
+        const metaball3RadiusUniform = gl.getUniformLocation(fragmentProgram, 'metaball3Radius');
+        const metaball1PositionUniform = gl.getUniformLocation(fragmentProgram, 'metaball1Position');
+        const metaball2PositionUniform = gl.getUniformLocation(fragmentProgram, 'metaball2Position');
+        const metaball3PositionUniform = gl.getUniformLocation(fragmentProgram, 'metaball3Position');
+        const metaball1ColorUniform = gl.getUniformLocation(fragmentProgram, 'metaball1Color');
+        const metaball2ColorUniform = gl.getUniformLocation(fragmentProgram, 'metaball2Color');
+        const metaball3ColorUniform = gl.getUniformLocation(fragmentProgram, 'metaball3Color');
+        const maxDistanceUniform = gl.getUniformLocation(fragmentProgram, 'maxDistance');
+        const maxStepsUniform = gl.getUniformLocation(fragmentProgram, 'maxSteps');
+
+
+
+        // --- Animation Loop ---
+        let time = 0.0;
+        const animationSpeed = 0.02;
+
+        function render() {
+            // Update uniforms
+            gl.uniform1f(timeUniform, time);
+            gl.uniform2f(screenSizeUniform, canvas.width, canvas.height);
+            gl.uniform1f(kUniform, 1.5);
+            gl.uniform1f(metaball1RadiusUniform, 1.0);
+            gl.uniform1f(metaball2RadiusUniform, 1.5);
+            gl.uniform1f(metaball3RadiusUniform, 2.0);
+
+            gl.uniform3f(metaball1PositionUniform, vertices[0]);
+            gl.uniform3f(metaball2PositionUniform, vertices[1]);
+            gl.uniform3f(metaball3PositionUniform, vertices[2]);
+
+            gl.uniform3f(metaball1ColorUniform, 1.0, 0.0, 0.0);
+            gl.uniform3f(metaball2ColorUniform, 0.0, 1.0, 0.0);
+            gl.uniform3f(metaball3ColorUniform, 0.0, 0.0, 1.0);
+
+            gl.uniform1f(maxDistanceUniform, 10.0);
+            gl.uniform1i(maxStepsUniform, 64);
+
+
+            // Render
+            gl.useProgram(vertexProgram);
+            gl.drawArrays(gl.TRIANGLES, 0, 6); // 2 triangles * 3 vertices/triangle
+            gl.useProgram(fragmentProgram);
+
+            // Increment time
+            time += animationSpeed;
+
+            requestAnimationFrame(render);
+        }
+
+        render();
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: gemma-3n-E4B-it-UD-Q4_K_XL.gguf -->
+<!-- Prompt: lightshow.md -->
+<!-- Generation Time: 25.64s -->
+<!-- Fallback Used: False -->

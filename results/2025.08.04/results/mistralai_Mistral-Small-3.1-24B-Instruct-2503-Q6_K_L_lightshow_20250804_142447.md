@@ -1,0 +1,295 @@
+Sure, let's build this psychedelic metaballs simulation step by step. Below is the complete HTML file containing the WebGL setup, the vertex and fragment shaders, and the JavaScript code to manage the simulation.
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+    <script>
+        // --- Standard WebGL Boilerplate ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        // Vertex shader program
+        const vsSource = `
+            attribute vec4 aVertexPosition;
+            void main(void) {
+                gl_Position = aVertexPosition;
+            }
+        `;
+
+        // Fragment shader program
+        const fsSource = `
+            precision mediump float;
+            uniform float time;
+            uniform vec2 resolution;
+            uniform vec3 metaballPositions[3];
+            uniform float metaballRadii[3];
+
+            vec3 color1 = vec3(1.0, 0.0, 0.5);
+            vec3 color2 = vec3(0.0, 1.0, 0.5);
+            vec3 color3 = vec3(0.5, 0.0, 1.0);
+
+            float sphereSDF(vec3 p, vec3 center, float radius) {
+                return length(p - center) - radius;
+            }
+
+            float smoothMin(float a, float b, float k) {
+                float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+                return mix(b, a, h) - k * h * (1.0 - h);
+            }
+
+            vec3 rayDir(vec2 uv, vec2 resolution) {
+                vec2 x = vec2(uv.x / resolution.x, uv.y / resolution.y);
+                x = x * 2.0 - 1.0;
+                x.x *= resolution.x / resolution.y;
+                return normalize(vec3(x, 1.0));
+            }
+
+            float sceneSDF(vec3 p) {
+                float dist = sphereSDF(p, metaballPositions[0], metaballRadii[0]);
+                for (int i = 1; i < 3; i++) {
+                    dist = smoothMin(dist, sphereSDF(p, metaballPositions[i], metaballRadii[i]), 0.5);
+                }
+                return dist;
+            }
+
+            void main(void) {
+                vec2 uv = gl_FragCoord.xy / resolution.xy;
+                vec3 rayDir = rayDir(uv, resolution);
+                vec3 ro = vec3(0.0, 0.0, 2.0); // Camera position
+
+                float totalDist = 0.0;
+                const float maxDist = 100.0;
+                const int maxSteps = 100;
+                const float minDist = 0.001;
+
+                for (int i = 0; i < maxSteps; i++) {
+                    vec3 p = ro + rayDir * totalDist;
+                    float d = sceneSDF(p);
+                    if (d < minDist) {
+                        float colorIndex = mod(time, 3.0);
+                        vec3 color = mix(color1, mix(color2, color3, colorIndex), colorIndex);
+                        gl_FragColor = vec4(color, 1.0);
+                        return;
+                    }
+                    if (totalDist > maxDist) {
+                        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                        return;
+                    }
+                    totalDist += d;
+                }
+            }
+        `;
+
+        // Initialize a shader program; this is where all the lighting
+        // for the vertices and so forth is established.
+        const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
+
+        // Collect all the info needed to use the shader program.
+        // Look up which attribute our shader program is using for aVertexPosition and look up
+        // uniform locations.
+        const programInfo = {
+            program: shaderProgram,
+            attribLocations: {
+                vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+            },
+            uniformLocations: {
+                time: gl.getUniformLocation(shaderProgram, 'time'),
+                resolution: gl.getUniformLocation(shaderProgram, 'resolution'),
+                metaballPositions: gl.getUniformLocation(shaderProgram, 'metaballPositions'),
+                metaballRadii: gl.getUniformLocation(shaderProgram, 'metaballRadii'),
+            },
+        };
+
+        // Here's where we call the routine that builds all the
+        // objects we'll be drawing.
+        const buffers = initBuffers(gl);
+
+        // Draw the scene repeatedly
+        let then = 0;
+
+        function render(now) {
+            now *= 0.001;  // convert to seconds
+            const deltaTime = now - then;
+            then = now;
+
+            drawScene(gl, programInfo, buffers, deltaTime);
+
+            requestAnimationFrame(render);
+        }
+        requestAnimationFrame(render);
+
+        function initShaderProgram(gl, vsSource, fsSource) {
+            const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+            // Create the shader program
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+
+            // If creating the shader program failed, alert
+            if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                alert('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+                return null;
+            }
+
+            return shaderProgram;
+        }
+
+        // Creates a shader of the given type, uploads the source and
+        // compiles it.
+        function loadShader(gl, type, source) {
+            const shader = gl.createShader(type);
+
+            // Send the source to the shader object
+            gl.shaderSource(shader, source);
+
+            // Compile the shader program
+            gl.compileShader(shader);
+
+            // See if it compiled successfully
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                alert('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+
+            return shader;
+        }
+
+        function initBuffers(gl) {
+            // Create a buffer for the square's positions.
+            const positionBuffer = gl.createBuffer();
+
+            // Select the positionBuffer as the one to apply buffer
+            // operations to from here out.
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+            // Now create an array of positions for the square.
+            const positions = [
+                -1.0, -1.0,
+                 1.0, -1.0,
+                -1.0,  1.0,
+                -1.0,  1.0,
+                 1.0, -1.0,
+                 1.0,  1.0,
+            ];
+
+            // Now pass the list of positions into WebGL to build the
+            // shape. We do this by creating a Float32Array from the
+            // JavaScript array, then use it to fill the current buffer.
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+            return {
+                position: positionBuffer,
+            };
+        }
+
+        function drawScene(gl, programInfo, buffers, deltaTime) {
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);  // Clear to black, fully opaque
+            gl.clearDepth(1.0);                 // Clear everything
+            gl.enable(gl.DEPTH_TEST);           // Enable depth testing
+            gl.depthFunc(gl.LEQUAL);            // Near things obscure far things
+
+            // Clear the canvas before we start drawing on it.
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            // Tell WebGL how to pull out the positions from the position
+            // buffer into the vertexPosition attribute.
+            {
+                const numComponents = 2;
+                const type = gl.FLOAT;
+                const normalize = false;
+                const stride = 0;
+                const offset = 0;
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+                gl.vertexAttribPointer(
+                    programInfo.attribLocations.vertexPosition,
+                    numComponents,
+                    type,
+                    normalize,
+                    stride,
+                    offset);
+                gl.enableVertexAttribArray(
+                    programInfo.attribLocations.vertexPosition);
+            }
+
+            // Tell WebGL which program to use
+            gl.useProgram(programInfo.program);
+
+            // Set the shader uniforms
+            gl.uniform2f(programInfo.uniformLocations.resolution, canvas.width, canvas.height);
+            gl.uniform1f(programInfo.uniformLocations.time, performance.now() * 0.001);
+
+            const positions = [
+                Math.cos(performance.now() * 0.001), Math.sin(performance.now() * 0.001), 0.0,
+                Math.cos(performance.now() * 0.001 + 2.0), Math.sin(performance.now() * 0.001 + 2.0), 0.5,
+                Math.cos(performance.now() * 0.001 + 4.0), Math.sin(performance.now() * 0.001 + 4.0), 1.0,
+            ];
+            gl.uniform3fv(programInfo.uniformLocations.metaballPositions, positions);
+
+            const radii = [
+                0.5 + 0.25 * Math.sin(performance.now() * 0.001),
+                0.5 + 0.25 * Math.sin(performance.now() * 0.001 + 2.0),
+                0.5 + 0.25 * Math.sin(performance.now() * 0.001 + 4.0),
+            ];
+            gl.uniform1fv(programInfo.uniformLocations.metaballRadii, radii);
+
+            {
+                const offset = 0;
+                const vertexCount = 6;
+                gl.drawArrays(gl.TRIANGLES, offset, vertexCount);
+            }
+        }
+    </script>
+</body>
+</html>
+```
+
+### Explanation:
+
+1. **WebGL Setup:**
+   - The `canvas` element is created and the WebGL context is initialized.
+   - The vertex shader (`vsSource`) simply passes the vertex positions to the fragment shader.
+   - The fragment shader (`fsSource`) contains the core logic for ray marching and metaball rendering.
+
+2. **Shader Programs:**
+   - **Vertex Shader:** Passes the vertex positions to the fragment shader.
+   - **Fragment Shader:** Implements the ray marching algorithm, calculates the SDF for metaballs, and applies smooth minimum to blend them. It also determines the color based on the hit distance and time.
+
+3. **Ray Marching and SDF:**
+   - The fragment shader casts rays from the camera position into the scene and iteratively steps forward based on the SDF.
+   - The `sphereSDF` function calculates the distance to a sphere, and `smoothMin` blends multiple SDFs.
+   - The `sceneSDF` function combines the SDFs of multiple metaballs.
+
+4. **Animation and Dynamics:**
+   - The `render` function uses `requestAnimationFrame` to update the scene continuously.
+   - The `time` uniform is updated with the current performance time, driving the animation of metaball positions and sizes.
+   - Metaball positions and radii are dynamically updated in the `drawScene` function to create a fluid, evolving effect.
+
+5. **Rendering:**
+   - The `drawScene` function sets up the WebGL buffers and uniforms, then draws a full-screen quad to execute the fragment shader for every pixel.
+
+This code should run directly in a modern web browser supporting WebGL and provide a visually stunning, continuously evolving metaball simulation reminiscent of 1960s psychedelic light shows.
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q6_K_L.gguf -->
+<!-- Prompt: lightshow.md -->
+<!-- Generation Time: 77.05s -->
+<!-- Fallback Used: False -->

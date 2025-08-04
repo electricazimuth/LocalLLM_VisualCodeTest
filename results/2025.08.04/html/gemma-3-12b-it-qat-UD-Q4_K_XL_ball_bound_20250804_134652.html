@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- YOUR CODE GOES HERE ---
+
+        const balls = [];
+        const numBalls = 50;
+        const gravity = 0.5;
+        const dampingFactor = 0.8;
+        const minRadius = 5;
+        const maxRadius = 20;
+
+        function init() {
+            for (let i = 0; i < numBalls; i++) {
+                const x = Math.random() * (W - 2 * minRadius) + minRadius;
+                const y = Math.random() * (H - 2 * minRadius) + minRadius;
+                const r = Math.random() * (maxRadius - minRadius) + minRadius;
+                const vx = (Math.random() - 0.5) * 2;
+                const vy = (Math.random() - 0.5) * 2;
+                const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+
+                balls.push({
+                    x,
+                    y,
+                    r,
+                    vx,
+                    vy,
+                    color
+                });
+            }
+        }
+
+        function gameLoop(timestamp) {
+            // Clear canvas (usually needed)
+            ctx.clearRect(0, 0, W, H);
+
+            // --- Update logic ---
+            for (let i = 0; i < balls.length; i++) {
+                const ball = balls[i];
+
+                // Apply Gravity
+                ball.vy += gravity;
+
+                // Update Positions
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+
+                // Wall Collision Detection & Response
+                if (ball.x + ball.r > W || ball.x - ball.r < 0) {
+                    ball.vx = -ball.vx * dampingFactor;
+                    ball.x = ball.x + ball.vx * (W > ball.x + ball.r ? W - (ball.x + ball.r) : -(ball.x - ball.r));
+                }
+                if (ball.y + ball.r > H || ball.y - ball.r < 0) {
+                    ball.vy = -ball.vy * dampingFactor;
+                    ball.y = ball.y + ball.vy * (H > ball.y + ball.r ? H - (ball.y + ball.r) : -(ball.y - ball.r));
+                }
+
+
+                // Ball-to-Ball Collision Detection & Response
+                for (let j = i + 1; j < balls.length; j++) {
+                    const ball2 = balls[j];
+                    const dx = ball.x - ball2.x;
+                    const dy = ball.y - ball2.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDist = ball.r + ball2.r;
+
+                    if (distance <= minDist) {
+                        // Collision detected
+                        const collisionAngle = Math.atan2(dy, dx);
+
+                        // Calculate impulse (simplified)
+                        const impulse = 0.5;
+
+                        // Update velocities (simplified)
+                        ball.vx -= impulse * Math.cos(collisionAngle);
+                        ball.vy -= impulse * Math.sin(collisionAngle);
+                        ball2.vx += impulse * Math.cos(collisionAngle);
+                        ball2.vy += impulse * Math.sin(collisionAngle);
+
+                        // Prevent overlap
+                        const overlap = minDist - distance;
+                        ball.x -= overlap * dx / distance;
+                        ball.y -= overlap * dy / distance;
+                        ball2.x += overlap * dx / distance;
+                        ball2.y += overlap * dy / distance;
+                    }
+                }
+            }
+
+
+            // --- Draw logic ---
+            for (let i = 0; i < balls.length; i++) {
+                const ball = balls[i];
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+                ctx.fillStyle = ball.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        init();
+        requestAnimationFrame(gameLoop);
+
+        // Add any initial setup or event listeners here
+
+    </script>
+    <section id="notes">
+        <p>
+            This code simulates bouncing balls using the HTML Canvas API.
+            It includes gravity, wall collisions with damping, and basic ball-to-ball collisions.
+            The collision response is a simplified version.
+            The performance can be improved further with spatial partitioning techniques (e.g., grid or quadtree)
+            to reduce the number of ball-to-ball collision checks.
+        </p>
+    </section>
+</body>
+</html>

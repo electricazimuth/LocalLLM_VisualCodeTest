@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fish Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #e0f7fa; /* Light blue background */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas"></canvas>
+
+    <script>
+        // Get canvas context
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Fish class
+        class Fish {
+            constructor(x, y, size, color, speed) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.color = color;
+                this.speed = speed;
+                this.direction = Math.random() * 2 * Math.PI;
+            }
+
+            update(deltaTime) {
+                // Wandering: add small random angle change
+                const wanderAngle = (Math.random() - 0.5) * 0.1; // +/- 0.05 radians
+                this.direction += wanderAngle;
+
+                // Boundary interaction
+                const padding = 50; // distance from edge to start steering
+                let desiredDirection = this.direction;
+
+                if (this.x - this.size < padding) {
+                    // Close to left edge, steer right (0 radians)
+                    desiredDirection = 0;
+                } else if (this.x + this.size > W - padding) {
+                    // Close to right edge, steer left (PI radians)
+                    desiredDirection = Math.PI;
+                } else if (this.y - this.size < padding) {
+                    // Close to top, steer down (PI/2)
+                    desiredDirection = Math.PI / 2;
+                } else if (this.y + this.size > H - padding) {
+                    // Close to bottom, steer up (3PI/2 or -PI/2)
+                    desiredDirection = -Math.PI / 2;
+                }
+
+                // Calculate the shortest angle between current and desired direction
+                let angleDiff = desiredDirection - this.direction;
+                // Normalize the angle difference to be between -PI and PI
+                angleDiff = (angleDiff + Math.PI) % (2 * Math.PI) - Math.PI;
+
+                // Determine the maximum turn angle based on turn rate and delta time
+                const turnRate = 2; // radians per second
+                const maxTurn = turnRate * deltaTime;
+
+                // Turn towards the desired direction by up to maxTurn
+                if (Math.abs(angleDiff) > maxTurn) {
+                    this.direction += angleDiff > 0 ? maxTurn : -maxTurn;
+                } else {
+                    this.direction += angleDiff;
+                }
+
+                // Update velocity components
+                this.vx = Math.cos(this.direction) * this.speed;
+                this.vy = Math.sin(this.direction) * this.speed;
+
+                // Update position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+
+                // Clamp position to stay within canvas bounds
+                this.x = Math.max(this.size, Math.min(this.x, W - this.size));
+                this.y = Math.max(this.size, Math.min(this.y, H - this.size));
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.direction);
+                // Scale by size (base size is 10 units, scaled to 'size' pixels)
+                ctx.scale(this.size / 10, this.size / 10);
+                ctx.fillStyle = this.color;
+                // Draw the fish shape (triangle)
+                ctx.beginPath();
+                ctx.moveTo(10, 0); // tip
+                ctx.lineTo(-10, 7); // left base
+                ctx.lineTo(-10, -7); // right base
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Create fish array
+        const fishCount = 15;
+        const fishArray = [];
+
+        function createFish() {
+            const size = Math.random() * 20 + 10; // 10 to 30 pixels
+            const speed = Math.random() * 100 + 50; // 50 to 150 px/s
+            const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+            const x = Math.random() * (W - 2 * size) + size;
+            const y = Math.random() * (H - 2 * size) + size;
+            return new Fish(x, y, size, color, speed);
+        }
+
+        for (let i = 0; i < fishCount; i++) {
+            fishArray.push(createFish());
+        }
+
+        // Animation loop
+        let lastTime = 0;
+
+        function gameLoop(timestamp) {
+            const delta = timestamp - lastTime;
+            lastTime = timestamp;
+            const deltaTime = delta / 1000; // in seconds
+
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update and draw all fish
+            for (const fish of fishArray) {
+                fish.update(deltaTime);
+                fish.draw(ctx);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

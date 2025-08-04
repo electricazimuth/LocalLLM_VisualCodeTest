@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+
+        canvas {
+            border: 1px solid black;
+            background-color: #fff;
+            display: block;
+            margin: 20px auto;
+        }
+    </style>
+</head>
+<body onload="gameLoop()">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Ball Constants ---
+        const gravity = 0.5;
+        const damping = 0.9;
+        const numBalls = 50;
+
+        // --- Ball Objects ---
+        const balls = [];
+
+        // --- Initialize Balls ---
+        function initBalls() {
+            for (let i = 0; i < numBalls; i++) {
+                const x = Math.random() * (W - 20); // Adjust for margin
+                const y = Math.random() * (H - 20); // Adjust for margin
+                const r = Math.random() * 5 + 2; // Radius between 2 and 7
+                const vx = (Math.random() - 0.5) * 2; // Random velocity
+                const vy = (Math.random() - 0.5) * 2;
+
+                const color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+                balls.push({
+                    x: x,
+                    y: y,
+                    vx: vx,
+                    vy: vy,
+                    r: r,
+                    mass: r * r, // Proportional to radius squared
+                    color: color
+                });
+            }
+        }
+
+        // --- Collision Detection ---
+        function checkCollision(ball1, ball2) {
+            const dx = ball1.x - ball2.x;
+            const dy = ball1.y - ball2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance <= ball1.r + ball2.r;
+        }
+
+
+        // --- Collision Response (Simple Impulse) ---
+        function resolveCollision(ball1, ball2) {
+            const dx = ball1.x - ball2.x;
+            const dy = ball1.y - ball2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const overlap = ball1.r + ball2.r - distance;
+
+            // Calculate impulse direction
+            const nx = dx / distance;
+            const ny = dy / distance;
+
+            // Calculate relative velocity
+            const vx1 = ball1.vx;
+            const vy1 = ball1.vy;
+            const vx2 = ball2.vx;
+            const vy2 = ball2.vy;
+
+            // Calculate the mass ratio
+            const m1 = ball1.mass;
+            const m2 = ball2.mass;
+            const ratio = m1 / (m1 + m2);
+
+            // Apply impulse to ball 1
+            ball1.vx = vx1 * ratio + vx2 * (1 - ratio);
+            ball1.vy = vy1 * ratio + vy2 * (1 - ratio);
+
+            // Apply impulse to ball 2
+            ball2.vx = -vx1 * ratio + vx2 * (1 - ratio);
+            ball2.vy = -vy1 * ratio + vy2 * (1 - ratio);
+
+            // Correct positions to avoid overlap after collision
+            ball1.x -= nx * overlap * 0.1;
+            ball1.y -= ny * overlap * 0.1;
+            ball2.x += nx * overlap * 0.1;
+            ball2.y += ny * overlap * 0.1;
+        }
+
+        // --- Update Ball Position ---
+        function updateBall(ball) {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            // Apply gravity
+            ball.vy += gravity;
+
+            // Wall collisions
+            if (ball.x + ball.r > W || ball.x - ball.r < 0) {
+                ball.vx = -ball.vx;
+            }
+            if (ball.y + ball.r > H || ball.y - ball.r < 0) {
+                ball.vy = -ball.vy;
+            }
+        }
+
+        // --- Main Game Loop ---
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            for (let i = 0; i < balls.length; i++) {
+                updateBall(balls[i]);
+
+                // Ball-to-ball collision detection and response
+                for (let j = i + 1; j < balls.length; j++) {
+                    if (checkCollision(balls[i], balls[j])) {
+                        resolveCollision(balls[i], balls[j]);
+                    }
+                }
+            }
+
+            // Draw balls
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, W, H); // Draw a background to see the bounce better
+
+            for (let i = 0; i < balls.length; i++) {
+                ctx.beginPath();
+                ctx.arc(balls[i].x, balls[i].y, balls[i].r, 0, 2 * Math.PI);
+                ctx.fillStyle = balls[i].color;
+                ctx.fill();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        initBalls();
+        gameLoop(0);
+    </script>
+</body>
+</html>

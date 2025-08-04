@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chicken and Eggs</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #90ee90;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas"></canvas>
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Global variables for chicken and eggs
+        let chicken;
+        const eggs = [];
+
+        // Initialize the simulation
+        function init() {
+            chicken = new Chicken(canvas.width / 2, canvas.height / 2);
+            animate();
+        }
+
+        // Animation loop
+        let lastTime = 0;
+        function animate(time) {
+            requestAnimationFrame(animate);
+            const deltaTime = (time - lastTime) / 1000; // Convert to seconds
+            lastTime = time;
+            update(deltaTime);
+            draw();
+        }
+
+        // Update game state
+        function update(deltaTime) {
+            chicken.update(deltaTime);
+        }
+
+        // Draw everything
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw chicken
+            chicken.draw(ctx);
+
+            // Draw eggs
+            eggs.forEach(egg => {
+                egg.draw(ctx);
+            });
+        }
+
+        // Chicken class
+        class Chicken {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 20;
+                this.speed = 2; // Pixels per second
+                this.direction = Math.random() * 2 * Math.PI;
+                this.state = 'wandering'; // 'wandering' or 'laying'
+                this.timer = 3000 + Math.random() * 2000; // 3-5 seconds
+                this.layDuration = 1000; // 1 second
+                this.layTimer = 0;
+            }
+
+            update(deltaTime) {
+                if (this.state === 'wandering') {
+                    // Move chicken
+                    this.x += Math.cos(this.direction) * this.speed * deltaTime;
+                    this.y += Math.sin(this.direction) * this.speed * deltaTime;
+
+                    // Check for boundary collision
+                    if (this.x < this.radius || this.x > canvas.width - this.radius ||
+                        this.y < this.radius || this.y > canvas.height - this.radius) {
+                        this.handleBoundaryCollision();
+                    }
+
+                    // Random direction change (1% chance per frame)
+                    if (Math.random() < 0.01) {
+                        this.changeDirection();
+                    }
+
+                    // Update egg timer
+                    this.timer -= deltaTime;
+                    if (this.timer <= 0) {
+                        this.state = 'laying';
+                        this.layTimer = this.layDuration;
+                    }
+                } else if (this.state === 'laying') {
+                    this.layTimer -= deltaTime;
+                    if (this.layTimer <= 0) {
+                        // Lay egg
+                        eggs.push(new Egg(this.x, this.y, this.direction));
+                        this.state = 'wandering';
+                        this.timer = 3000 + Math.random() * 2000;
+                    }
+                }
+            }
+
+            handleBoundaryCollision() {
+                // Adjust position to be inside boundaries
+                if (this.x < this.radius) this.x = this.radius;
+                if (this.x > canvas.width - this.radius) this.x = canvas.width - this.radius;
+                if (this.y < this.radius) this.y = this.radius;
+                if (this.y > canvas.height - this.radius) this.y = canvas.height - this.radius;
+
+                // Determine collision type
+                let collision = '';
+                if (this.x === this.radius || this.x === canvas.width - this.radius) {
+                    collision = 'vertical';
+                } else if (this.y === this.radius || this.y === canvas.height - this.radius) {
+                    collision = 'horizontal';
+                }
+
+                // Adjust direction based on collision type
+                if (collision === 'vertical') {
+                    this.direction = Math.PI - this.direction;
+                } else if (collision === 'horizontal') {
+                    this.direction = -this.direction;
+                }
+            }
+
+            changeDirection() {
+                // Generate a new random direction
+                this.direction = Math.random() * 2 * Math.PI;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.direction);
+
+                // Draw body
+                ctx.fillStyle = this.state === 'laying' ? 'orange' : 'yellow';
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw beak
+                ctx.fillStyle = 'red';
+                ctx.beginPath();
+                ctx.moveTo(25, 0);
+                ctx.lineTo(15, 5);
+                ctx.lineTo(15, -5);
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw eyes
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(10, 5, 3, 0, Math.PI * 2);
+                ctx.arc(-10, 5, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // Egg class
+        class Egg {
+            constructor(x, y, direction) {
+                this.x = x;
+                this.y = y;
+                this.direction = direction;
+
+                // Offset behind the chicken
+                const offset = 20;
+                this.x -= Math.cos(direction) * offset;
+                this.y -= Math.sin(direction) * offset;
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, 10, 15, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Start the simulation
+        init();
+    </script>
+</body>
+</html>

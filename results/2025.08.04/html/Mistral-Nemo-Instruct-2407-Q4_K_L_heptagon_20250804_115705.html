@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        const GRAVITY = 0.5;
+        const DAMPING = 0.95;
+        const BALL_RADIUS = 20;
+        const BALL_COLORS = ['#f8b862', '#f6ad49', '#f39800', '#f08300', '#ec6d51', '#ee7948', '#ed6d3d', '#ec6800', '#ec6800', '#ee7800', '#eb6238', '#ea5506', '#ea5506', '#eb6101', '#e49e61', '#e45e32', '#e17b34', '#dd7a56', '#db8449', '#d66a35'];
+        const HEPTAGON_SIDES = 7;
+        const HEPTAGON_RADIUS = 150;
+        const CELL_SIZE = 40;
+        const GRID_WIDTH = Math.ceil(W / CELL_SIZE);
+        const GRID_HEIGHT = Math.ceil(H / CELL_SIZE);
+
+        class Ball {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = Math.random() * 5 - 2.5;
+                this.vy = -5;
+                this.r = BALL_RADIUS;
+                this.color = BALL_COLORS[Math.floor(Math.random() * BALL_COLORS.length)];
+                this.number = Math.floor(Math.random() * 20) + 1;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.fillText(this.number, this.x - this.r / 2, this.y + this.r / 2);
+            }
+
+            update() {
+                this.vy += GRAVITY;
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x - this.r < 0 || this.x + this.r > W) {
+                    this.vx = -this.vx * DAMPING;
+                }
+                if (this.y - this.r < 0) {
+                    this.vy = -this.vy * DAMPING;
+                    this.y = this.r;
+                }
+            }
+        }
+
+        const balls = Array.from({ length: 20 }, () => new Ball(W / 2, H / 2));
+        let heptagonAngle = 0;
+
+        function drawHeptagon() {
+            const angleStep = (Math.PI * 2) / HEPTAGON_SIDES;
+            ctx.beginPath();
+            for (let i = 0; i < HEPTAGON_SIDES; i++) {
+                const angle = heptagonAngle + i * angleStep;
+                const x = W / 2 + HEPTAGON_RADIUS * Math.cos(angle);
+                const y = H / 2 + HEPTAGON_RADIUS * Math.sin(angle);
+                ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+            drawHeptagon();
+
+            balls.forEach(ball => {
+                ball.update();
+                ball.draw();
+            });
+
+            heptagonAngle += (Math.PI * 2) / (5 * 1000);
+
+            detectCollisions();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function detectCollisions() {
+            const grid = Array.from({ length: GRID_WIDTH * GRID_HEIGHT }, () => []);
+
+            balls.forEach(ball => {
+                const cellX = Math.floor(ball.x / CELL_SIZE);
+                const cellY = Math.floor(ball.y / CELL_SIZE);
+                const index = cellX + cellY * GRID_WIDTH;
+                grid[index].push(ball);
+            });
+
+            for (let i = 0; i < grid.length; i++) {
+                const ballsInCell = grid[i];
+                for (let j = 0; j < ballsInCell.length - 1; j++) {
+                    for (let k = j + 1; k < ballsInCell.length; k++) {
+                        const ball1 = ballsInCell[j];
+                        const ball2 = ballsInCell[k];
+                        if (distance(ball1, ball2) < BALL_RADIUS * 2) {
+                            resolveCollision(ball1, ball2);
+                        }
+                    }
+                }
+            }
+        }
+
+        function distance(ball1, ball2) {
+            const dx = ball1.x - ball2.x;
+            const dy = ball1.y - ball2.y;
+            return Math.hypot(dx, dy);
+        }
+
+        function resolveCollision(ball1, ball2) {
+            const mass1 = Math.PI * Math.pow(ball1.r, 2);
+            const mass2 = Math.PI * Math.pow(ball2.r, 2);
+            const totalMass = mass1 + mass2;
+
+            const v1 = { x: ball1.vx, y: ball1.vy };
+            const v2 = { x: ball2.vx, y: ball2.vy };
+
+            const vxTotal = (v1.x * mass1 + v2.x * mass2) / totalMass;
+            const vyTotal = (v1.y * mass1 + v2.y * mass2) / totalMass;
+
+            let vx1 = v1.x - vxTotal;
+            let vy1 = v1.y - vyTotal;
+            let vx2 = v2.x - vxTotal;
+            let vy2 = v2.y - vyTotal;
+
+            const dvx = vx1 - vx2;
+            const dvy = vy1 - vy2;
+
+            const impulse = 2 * (dvx * vx1 + dvy * vy1) / (1 + 1);
+            vx1 -= impulse / mass1;
+            vy1 -= impulse / mass1;
+            vx2 += impulse / mass2;
+            vy2 += impulse / mass2;
+
+            ball1.vx = vx1;
+            ball1.vy = vy1;
+            ball2.vx = vx2;
+            ball2.vy = vy2;
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <!-- Add any notes here -->
+    </section>
+</body>
+</html>
