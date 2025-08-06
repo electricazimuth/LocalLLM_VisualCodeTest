@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // -------------------------- CONFIGURATION --------------------------
+        const NUM_BALLS = 60;           // Number of balls to simulate
+        const MAX_RADIUS = 15;          // Maximum radius of a ball
+        const MIN_RADIUS = 8;           // Minimum radius of a ball
+        const GRAVITY = 0.2;            // Gravity acceleration per frame
+        const DAMPING = 0.92;           // Energy loss on wall collision
+        const COLLISION_DAMPING = 0.98; // Energy loss on ball‑ball collision
+        const CELL_SIZE = 80;           // Cell size for spatial hashing
+
+        // -------------------------- HELPERS --------------------------
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function randomColor() {
+            const h = Math.floor(random(0, 360));
+            const s = Math.floor(random(60, 100));
+            const l = Math.floor(random(40, 70));
+            return `hsl(${h},${s}%,${l}%)`;
+        }
+
+        // -------------------------- BALL CLASS --------------------------
+        class Ball {
+            constructor(x, y, vx, vy, r, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.r = r;
+                this.mass = r * r; // Mass proportional to area
+                this.color = color;
+            }
+
+            update() {
+                this.vy += GRAVITY;      // apply gravity
+                this.x += this.vx;       // update position
+                this.y += this.vy;
+                this.wallCollision();
+            }
+
+            wallCollision() {
+                // Left / Right walls
+                if (this.x - this.r < 0) {
+                    this.x = this.r;
+                    this.vx = -this.vx * DAMPING;
+                } else if (this.x + this.r > W) {
+                    this.x = W - this.r;
+                    this.vx = -this.vx * DAMPING;
+                }
+
+                // Top / Bottom walls
+                if (this.y - this.r < 0) {
+                    this.y = this.r;
+                    this.vy = -this.vy * DAMPING;
+                } else if (this.y + this.r > H) {
+                    this.y = H - this.r;
+                    this.vy = -this.vy * DAMPING;
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        // -------------------------- INITIALISE BALLS --------------------------
+        const balls = [];
+
+        for (let i = 0; i < NUM_BALLS; i++) {
+            let r = random(MIN_RADIUS, MAX_RADIUS);
+            let x = random(r, W - r);
+            let y = random(r, H - r);
+            let vx = random(-2, 2);
+            let vy = random(-2, 2);
+            let color = randomColor();
+
+            const newBall = new Ball(x, y, vx, vy, r, color);
+
+            // Avoid initial overlaps (simple retry approach)
+            let overlap = false;
+            for (let j = 0; j < balls.length; j++) {
+                const b = balls[j];
+                const dx = b.x - newBall.x;
+                const dy = b.y - newBall.y;
+                const distSq = dx * dx + dy * dy;
+                if (distSq < (b.r + newBall.r) * (b.r + newBall.r)) {
+                    overlap = true;
+                    break;
+                }
+            }
+            if (!overlap) {
+                balls.push(newBall);
+            } else {
+                i--; // retry this ball
+            }
+        }
+
+        // -------------------------- SPATIAL HASHING --------------------------
+        function getCellIndex(x, y) {
+            const ix = Math.floor(x / CELL_SIZE);
+            const iy = Math.floor(y / CELL_SIZE);
+            return ix + ',' + iy; // string key
+        }
+
+        function buildGrid() {
+            const grid = new Map();
+            for (let i = 0; i < balls.length; i++) {
+                const b = balls[i];
+                const key = getCellIndex(b.x, b.y);
+                if (!grid.has(key)) grid.set(key, []);
+                grid.get(key).push(i);
+            }
+            return grid;
+        }
+
+        function checkCollisions(grid) {
+            const checked = new Set(); // to avoid duplicate pairs
+
+            for (let i = 0; i < balls.length; i++) {
+                const b1 = balls[i];
+                const cellX = Math.floor(b1.x / CELL_SIZE);
+                const cellY = Math.floor(b1.y / CELL_SIZE);
+
+                // Check current cell and all 8 neighbours
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        const key = (cellX + dx) + ',' + (cellY + dy);
+                        const cell = grid.get(key);
+                        if (!cell) continue;
+
+                        for (let j of cell) {
+                            if (j <= i) continue; // avoid double-check & self
+                            const pairKey = i < j ? `${i},${j}` : `${j},${i}`;
+                            if (checked.has(pairKey)) continue;
+                            checked.add(pairKey);
+
+                            const b2 = balls[j];
+                            const dx = b2.x - b1.x;
+                            const dy = b2.y - b1.y;
+                            const distSq = dx * dx + dy * dy;
+                            const radiiSum = b1.r + b2.r;
+                            if (distSq <= radiiSum * radiiSum) {
+                                resolveCollision(b1, b2);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // -------------------------- COLLISION RESPONSE --------------------------
+        function resolveCollision(b1, b2) {
+            const dx = b2.x - b1.x;
+            const dy = b2.y - b1.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist === 0) return; // Prevent division by zero
+
+            // Normal and tangent vectors
+            const nx = dx / dist;
+            const ny = dy / dist;
+            const tx = -ny;
+            const ty = nx;
+
+            // Project velocities onto normal and tangent directions
+            const v1n = nx * b1.vx + ny * b1.vy;
+            const v1t = tx * b1.vx + ty * b1.vy;
+            const v2n = nx * b2.vx + ny * b2.vy;
+            const v2t = tx * b2.vx + ty * b2.vy;
+
+            // New normal velocities after collision (elastic, with damping)
+            const v1nPrime = (v1n * (b1.mass - b2.mass) + 2 * b2.mass * v2n) / (b1.mass + b2.mass);
+            const v2nPrime = (v2n * (b2.mass - b1.mass) + 2 * b1.mass * v1n) / (b1.mass + b2.mass);
+
+            const v1nPrimeDamped = v1nPrime * COLLISION_DAMPING;
+            const v2nPrimeDamped = v2nPrime * COLLISION_DAMPING;
+
+            // Convert back to x,y velocity components
+            b1.vx = v1nPrimeDamped * nx + v1t * tx;
+            b1.vy = v1nPrimeDamped * ny + v1t * ty;
+            b2.vx = v2nPrimeDamped * nx + v2t * tx;
+            b2.vy = v2nPrimeDamped * ny + v2t * ty;
+
+            // Resolve overlap by moving balls apart along the normal
+            const overlap = (b1.r + b2.r) - dist;
+            const correction = overlap / 2;
+            b1.x -= correction * nx;
+            b1.y -= correction * ny;
+            b2.x += correction * nx;
+            b2.y += correction * ny;
+        }
+
+        // -------------------------- MAIN LOOP --------------------------
+        function gameLoop() {
+            // 1. Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // 2. Update balls
+            for (let b of balls) {
+                b.update();
+            }
+
+            // 3. Collision detection & resolution
+            const grid = buildGrid();
+            checkCollisions(grid);
+
+            // 4. Draw balls
+            for (let b of balls) {
+                b.draw(ctx);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the simulation
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <p><strong>Notes:</strong></p>
+        <ul>
+            <li>Gravity, damping, and collision physics are tuned for a pleasing visual effect.</li>
+            <li>Spatial hashing (grid) reduces the complexity of collision checks from O(n²) to roughly O(n).</li>
+            <li>Collision resolution uses a standard elastic collision formula with a small damping factor to avoid perpetual motion.</li>
+            <li>The simulation runs smoothly on modern browsers with 60+ balls.</li>
+        </ul>
+    </section>
+</body>
+</html>

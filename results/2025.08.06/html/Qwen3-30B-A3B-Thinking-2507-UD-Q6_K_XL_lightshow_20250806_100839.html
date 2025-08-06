@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Psychedelic Metaball Ray Marching</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #e0e0ff;
+            text-align: center;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #0a0e17, #1a0a2a);
+            background-attachment: fixed;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 15px rgba(100, 200, 255, 0.7),
+                         0 0 30px rgba(50, 150, 255, 0.5);
+            background: linear-gradient(to right, #4cc9f0, #8a2be2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 1px;
+            animation: pulse 4s infinite alternate;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            color: #a0c8ff;
+            max-width: 600px;
+            margin: 0 auto 2rem;
+            line-height: 1.6;
+            text-shadow: 0 0 5px rgba(100, 150, 255, 0.3);
+        }
+        
+        .info {
+            position: absolute;
+            bottom: 20px;
+            font-size: 0.9rem;
+            color: #88a0ff;
+            text-shadow: 0 0 5px rgba(100, 150, 255, 0.3);
+            animation: fadeIn 2s ease-in-out;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(10, 20, 40, 0.7);
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid #4a235a;
+            backdrop-filter: blur(10px);
+            z-index: 10;
+        }
+        
+        .controls h3 {
+            margin-top: 0;
+            color: #8a2be2;
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+        }
+        
+        .control-group {
+            margin-bottom: 10px;
+        }
+        
+        .control-label {
+            display: block;
+            margin-bottom: 5px;
+            color: #a0c8ff;
+            font-size: 0.9rem;
+        }
+        
+        .control-value {
+            font-weight: bold;
+            color: #4cc9f0;
+        }
+        
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            border: 1px solid #1a0a2a;
+            box-shadow: 0 0 50px rgba(100, 50, 200, 0.3);
+        }
+        
+        @keyframes pulse {
+            0% { text-shadow: 0 0 15px rgba(100, 200, 255, 0.7), 0 0 30px rgba(50, 150, 255, 0.5); }
+            100% { text-shadow: 0 0 25px rgba(100, 200, 255, 0.9), 0 0 50px rgba(50, 150, 255, 0.7); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .note {
+            position: absolute;
+            bottom: 50px;
+            width: 100%;
+            color: #7080ff;
+            font-size: 0.8rem;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 20px;
+            text-align: center;
+            line-height: 1.4;
+        }
+        
+        .note span {
+            color: #4cc9f0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Psychedelic Metaball Ray Marching</h1>
+    <div class="subtitle">Organic, evolving 3D metaballs rendered with ray marching and signed distance functions. A modern tribute to 1960s psychedelic light shows.</div>
+    
+    <div class="controls">
+        <h3>Simulation Controls</h3>
+        <div class="control-group">
+            <div class="control-label">Metaball Count</div>
+            <div class="control-value" id="metaballCount">8</div>
+        </div>
+        <div class="control-group">
+            <div class="control-label">Smoothness</div>
+            <div class="control-value" id="smoothness">8.0</div>
+        </div>
+        <div class="control-group">
+            <div class="control-label">Animation Speed</div>
+            <div class="control-value" id="speed">1.0x</div>
+        </div>
+    </div>
+    
+    <canvas id="glCanvas"></canvas>
+    
+    <div class="info">
+        Click or tap anywhere to reset the animation
+    </div>
+    
+    <div class="note">
+        <span>Technical Note:</span> This is a pure WebGL implementation using ray marching with Signed Distance Functions (SDFs). The metaballs use smooth minimum blending for organic merging, and the color palette cycles through psychedelic hues using time-based HSV modulation. All animation is driven by the <code>time</code> uniform updated via requestAnimationFrame.
+    </div>
+
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        
+        uniform float u_time;
+        uniform vec2 u_resolution;
+        
+        // Constants for ray marching
+        const float EPSILON = 0.001;
+        const int MAX_STEPS = 100;
+        const float MAX_DIST = 100.0;
+        
+        // Smooth minimum function for organic blending
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+        
+        // Sphere SDF
+        float sphereSDF(vec3 p, vec3 center, float radius) {
+            return length(p - center) - radius;
+        }
+        
+        // Scene SDF - combines multiple metaballs
+        float sceneSDF(vec3 p) {
+            float d = MAX_DIST;
+            float time = u_time * 0.1;
+            
+            // Create 8 metaballs moving in circular patterns
+            for (int i = 0; i < 8; i++) {
+                float angle = time * 0.5 + float(i) * 0.785;
+                float radius = 1.5 + 0.5 * sin(time * 0.3 + float(i) * 0.2);
+                vec3 center = vec3(
+                    cos(angle) * (2.0 + 0.5 * sin(time * 0.1 + float(i) * 0.5)),
+                    sin(angle) * (2.0 + 0.5 * sin(time * 0.1 + float(i) * 0.5)),
+                    0.0
+                );
+                
+                float dist = sphereSDF(p, center, radius);
+                d = smin(d, dist, 8.0);
+            }
+            
+            return d;
+        }
+        
+        // Compute normal from SDF gradient
+        vec3 getNormal(vec3 p) {
+            const float eps = 0.001;
+            vec3 n = vec3(
+                sceneSDF(p + vec3(eps, 0.0, 0.0)) - sceneSDF(p - vec3(eps, 0.0, 0.0)),
+                sceneSDF(p + vec3(0.0, eps, 0.0)) - sceneSDF(p - vec3(0.0, eps, 0.0)),
+                sceneSDF(p + vec3(0.0, 0.0, eps)) - sceneSDF(p - vec3(0.0, 0.0, eps))
+            );
+            return normalize(n);
+        }
+        
+        // HSV to RGB conversion
+        vec3 hsv2rgb(vec3 c) {
+            vec3 rgb = c.z * (1.0 + c.y * (vec3(1.0, 1.0, 1.0) - vec3(1.0, 1.0, 1.0) * c.x));
+            // Standard HSV to RGB conversion
+            float h = c.x * 6.0;
+            float f = fract(h);
+            float p = c.z * (1.0 - c.y);
+            float q = c.z * (1.0 - c.y * f);
+            float t = c.z * (1.0 - c.y * (1.0 - f));
+            vec3 r = vec3(0.0);
+            
+            if (h < 1.0) { r = vec3(c.z, t, p); }
+            else if (h < 2.0) { r = vec3(q, c.z, p); }
+            else if (h < 3.0) { r = vec3(p, c.z, t); }
+            else if (h < 4.0) { r = vec3(p, q, c.z); }
+            else if (h < 5.0) { r = vec3(t, p, c.z); }
+            else { r = vec3(c.z, p, q); }
+            
+            return r;
+        }
+        
+        void main() {
+            // Convert pixel to NDC (-1 to 1)
+            vec2 uv = gl_FragCoord.xy / u_resolution.xy * 2.0 - 1.0;
+            uv.x *= u_resolution.x / u_resolution.y; // Correct aspect ratio
+            
+            // Camera setup
+            vec3 rayOrigin = vec3(0.0, 0.0, -5.0);
+            vec3 rayDir = normalize(vec3(uv.x, uv.y, 1.0));
+            
+            // Ray marching
+            float totalDist = 0.0;
+            bool hit = false;
+            vec3 hitPoint;
+            
+            for (int i = 0; i < MAX_STEPS; i++) {
+                vec3 p = rayOrigin + rayDir * totalDist;
+                float dist = sceneSDF(p);
+                
+                if (dist < EPSILON) {
+                    hit = true;
+                    hitPoint = p;
+                    break;
+                }
+                
+                totalDist += dist;
+                
+                if (totalDist > MAX_DIST) {
+                    break;
+                }
+            }
+            
+            // Background color
+            vec3 color = vec3(0.0, 0.0, 0.0);
+            
+            // If we hit a metaball
+            if (hit) {
+                // Calculate normal for lighting
+                vec3 normal = getNormal(hitPoint);
+                
+                // Light direction (top-right)
+                vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+                float diff = max(dot(normal, lightDir), 0.0);
+                
+                // Time-based color cycling (psychedelic palette)
+                float hue = mod(u_time * 0.05, 1.0);
+                vec3 baseColor = hsv2rgb(vec3(hue, 0.8 + 0.2 * sin(u_time * 0.1), 0.5 + 0.5 * diff));
+                
+                // Add glow effect
+                float glow = 1.0 - smoothstep(0.9, 1.0, diff);
+                vec3 glowColor = vec3(0.8, 0.2, 1.0) * glow;
+                
+                // Combine colors
+                color = baseColor * (0.7 + 0.3 * diff) + glowColor * 0.3;
+                
+                // Add subtle pulsing effect
+                float pulse = 0.5 + 0.5 * sin(u_time * 0.5 + length(hitPoint));
+                color *= pulse;
+            }
+            
+            // Add subtle noise for organic texture
+            float noise = sin(gl_FragCoord.x * 0.01 + u_time * 0.1) * 
+                         sin(gl_FragCoord.y * 0.01 + u_time * 0.15);
+            color += vec3(noise * 0.1, noise * 0.05, noise * 0.15);
+            
+            // Ensure color stays within [0,1]
+            color = min(color, vec3(1.0));
+            
+            gl_FragColor = vec4(color, 1.0);
+        }
+    </script>
+
+    <script>
+        // --- WebGL Setup ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        
+        if (!gl) {
+            alert('WebGL not supported. Please use a modern browser.');
+            throw new Error('WebGL not supported');
+        }
+        
+        // Set canvas size to window size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // --- Create Shader Program ---
+        function createShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+        
+        function createProgram(vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program linking error:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            return program;
+        }
+        
+        // Get shaders from script tags
+        const vertexShaderSource = document.getElementById('vertex-shader').textContent;
+        const fragmentShaderSource = document.getElementById('fragment-shader').textContent;
+        
+        const vertexShader = createShader(gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+        
+        const program = createProgram(vertexShader, fragmentShader);
+        gl.useProgram(program);
+        
+        // --- Create Full-Screen Quad ---
+        const vertices = new Float32Array([
+            -1.0, -1.0,
+             1.0, -1.0,
+             1.0,  1.0,
+            -1.0,  1.0
+        ]);
+        
+        const vertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        
+        // Get attribute location
+        const positionLocation = gl.getAttribLocation(program, 'a_position');
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(positionLocation);
+        
+        // --- Uniforms ---
+        const timeLocation = gl.getUniformLocation(program, 'u_time');
+        const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
+        
+        // --- Animation Loop ---
+        let lastTime = 0;
+        let animationSpeed = 1.0;
+        let metaballCount = 8;
+        let smoothness = 8.0;
+        
+        function updateUniforms(currentTime) {
+            const deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+            
+            // Update time uniform (scaled by animation speed)
+            gl.uniform1f(timeLocation, currentTime * 0.001 * animationSpeed);
+            
+            // Update resolution
+            gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+        }
+        
+        function render(currentTime) {
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            
+            updateUniforms(currentTime);
+            gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+            
+            requestAnimationFrame(render);
+        }
+        
+        // --- User Interaction ---
+        canvas.addEventListener('click', () => {
+            animationSpeed = 1.0 + Math.random() * 2.0;
+            metaballCount = 6 + Math.floor(Math.random() * 6);
+            smoothness = 5.0 + Math.random() * 10.0;
+            
+            document.getElementById('speed').textContent = `${animationSpeed.toFixed(1)}x`;
+            document.getElementById('metaballCount').textContent = metaballCount;
+            document.getElementById('smoothness').textContent = smoothness.toFixed(1);
+        });
+        
+        // Start animation
+        requestAnimationFrame(render);
+        
+        // --- Add some interactive elements ---
+        document.getElementById('speed').textContent = animationSpeed.toFixed(1) + 'x';
+        document.getElementById('metaballCount').textContent = metaballCount;
+        document.getElementById('smoothness').textContent = smoothness.toFixed(1);
+    </script>
+</body>
+</html>

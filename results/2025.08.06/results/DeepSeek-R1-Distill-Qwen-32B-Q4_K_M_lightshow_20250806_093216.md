@@ -1,0 +1,254 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ray‑Marching Psychedelic Metaballs</title>
+<style>
+    body{margin:0;overflow:hidden;background:#000;}
+    canvas{display:block;width:100vw;height:100vh;}
+</style>
+</head>
+<body>
+<canvas id="glCanvas"></canvas>
+
+<!-- Vertex shader – just passes clip‑space coordinates -->
+<script id="vs" type="x-shader/x-vertex">
+attribute vec2 a_position;
+void main(){
+    gl_Position = vec4(a_position, 0.0, 1.0);
+}
+</script>
+
+<!-- Fragment shader – the heart of the demo -->
+<script id="fs" type="x-shader/x-fragment">
+precision highp float;
+
+// Uniforms
+uniform vec2 u_resolution;
+uniform float u_time;
+
+// Constants
+const int MAX_STEPS = 128;
+const float MAX_DIST = 100.0;
+const float SURF_DIST = 0.001;
+const int NUM_BALLS = 8;
+
+// ---------- Utility functions ----------
+float smoothMin(float a, float b, float k){
+    // Smooth minimum (k controls softness)
+    float h = clamp(0.5 + 0.5*(b-a)/k, 0.0, 1.0);
+    return mix(b, a, h) - k*h*(1.0-h);
+}
+
+// Convert HSV to RGB
+vec3 hsv2rgb(vec3 c){
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz)*6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+// ---------- Scene definition ----------
+float map(vec3 p){
+    // Combine NUM_BALLS metaballs with smooth min
+    float d = 1e20; // start with a large distance
+    for(int i=0;i<NUM_BALLS;i++){
+        // Each ball moves on a 3‑D Lissajous curve
+        float t = u_time + float(i)*1.0;
+        vec3 pos = vec3(
+            sin(t),
+            cos(t*1.3),
+            sin(t*1.7)
+        );
+        float r = 0.4 + 0.1*sin(t*2.0); // radius oscillates
+        float dist = length(p - pos) - r;
+        if(i==0) d = dist; else d = smoothMin(d, dist, 0.3);
+    }
+    return d;
+}
+
+// ---------- Normal estimation ----------
+vec3 estimateNormal(vec3 p){
+    const vec3 eps = vec3(0.001, 0.0, 0.0);
+    float dx = map(p + eps.xyy) - map(p - eps.xyy);
+    float dy = map(p + eps.yxy) - map(p - eps.yxy);
+    float dz = map(p + eps.yyx) - map(p - eps.yyx);
+    return normalize(vec3(dx, dy, dz));
+}
+
+// ---------- Main ----------
+void main(){
+    // Normalized pixel coordinates (from -1 to 1)
+    vec2 uv = (gl_FragCoord.xy / u_resolution) * 2.0 - 1.0;
+    uv.x *= u_resolution.x / u_resolution.y;
+
+    // Camera setup
+    vec3 camPos = vec3(0.0, 0.0, 3.0);
+    vec3 dir = normalize(vec3(uv, -1.5)); // FOV ~ 45°
+    vec3 p = camPos;
+    float totalDist = 0.0;
+    int i;
+    for(i=0;i<MAX_STEPS;i++){
+        float dist = map(p);
+        if(dist < SURF_DIST) break;
+        p += dir * dist;
+        totalDist += dist;
+        if(totalDist > MAX_DIST) break;
+    }
+
+    vec3 color = vec3(0.0);
+    if(i < MAX_STEPS && totalDist < MAX_DIST){
+        // Surface hit – compute normal and lighting
+        vec3 normal = estimateNormal(p);
+        vec3 lightDir = normalize(vec3(0.5, 0.8, -0.6));
+        float diff = max(dot(normal, lightDir), 0.0);
+
+        // Hue based on distance traveled (creates moving color bands)
+        float hue = mod(u_time + totalDist*0.1, 1.0);
+        vec3 base = hsv2rgb(vec3(hue, 0.7, 1.0));
+
+        // Simple ambient occlusion (optional)
+        float ao = 0.0;
+        for(int j=0;j<4;j++){
+            float l = 0.01 * float(j+1);
+            ao += max(0.0, 1.0 - map(p + normal * l)/l);
+        }
+        ao = clamp(ao, 0.0, 1.0);
+
+        color = base * diff * ao;
+    } else {
+        // Background – subtle glow based on distance
+        float glow = exp(-totalDist * 0.02);
+        color = vec3(glow * 0.2, glow * 0.3, glow * 0.4);
+    }
+
+    // Gamma correct
+    color = pow(color, vec3(0.4545));
+    gl_FragColor = vec4(color, 1.0);
+}
+</script>
+
+<script>
+/* ---------- WebGL Boilerplate ---------- */
+const canvas = document.getElementById('glCanvas');
+const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+if (!gl) { alert('WebGL not supported'); throw new Error('WebGL not supported'); }
+
+// Resize canvas to fit the window
+function resizeCanvas(){
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    gl.viewport(0,0,canvas.width,canvas.height);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Compile shader helper
+function compileShader(src, type){
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, src);
+    gl.compileShader(shader);
+    if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)){
+        console.error(gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+// Link program helper
+function createProgram(vsSrc, fsSrc){
+    const program = gl.createProgram();
+    const v = compileShader(vsSrc, gl.VERTEX_SHADER);
+    const f = compileShader(fsSrc, gl.FRAGMENT_SHADER);
+    gl.attachShader(program, v);
+    gl.attachShader(program, f);
+    gl.linkProgram(program);
+    if(!gl.getProgramParameter(program, gl.LINK_STATUS)){
+        console.error(gl.getProgramInfoLog(program));
+        gl.deleteProgram(program);
+        return null;
+    }
+    return program;
+}
+
+// Get shader sources
+const vsSource = document.getElementById('vs').textContent;
+const fsSource = document.getElementById('fs').textContent;
+
+// Create program
+const program = createProgram(vsSource, fsSource);
+gl.useProgram(program);
+
+// Fullscreen quad (two triangles)
+const quadVerts = new Float32Array([
+    -1, -1,
+     1, -1,
+    -1,  1,
+    -1,  1,
+     1, -1,
+     1,  1,
+]);
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+const vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+const posLoc = gl.getAttribLocation(program, 'a_position');
+gl.enableVertexAttribArray(posLoc);
+gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+// Uniform locations
+const uResolutionLoc = gl.getUniformLocation(program, 'u_resolution');
+const uTimeLoc = gl.getUniformLocation(program, 'u_time');
+
+// Animation loop
+let startTime = performance.now();
+function render(){
+    const currentTime = performance.now();
+    const elapsed = (currentTime - startTime) / 1000.0; // seconds
+
+    gl.clearColor(0,0,0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.uniform2f(uResolutionLoc, canvas.width, canvas.height);
+    gl.uniform1f(uTimeLoc, elapsed);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+
+<!-- Optional notes section -->
+<section id="notes" style="display:none;">
+    <h2>Implementation Notes</h2>
+    <p>
+        • <strong>Ray marching</strong> uses a simple distance estimator that stops when the distance is below a small epsilon or after a maximum number of steps.
+    </p>
+    <p>
+        • <strong>Smooth min</strong> (soft union) is implemented with a small softness parameter (k = 0.3). This gives the classic “blobby” look.
+    </p>
+    <p>
+        • <strong>Metaball motion</strong> is driven by time‑dependent Lissajous curves directly in the shader, so no JS updates are needed for positions.
+    </p>
+    <p>
+        • <strong>Coloring</strong> uses HSV → RGB conversion. The hue cycles with the accumulated marching distance, creating moving color bands.
+    </p>
+    <p>
+        • <strong>Lighting</strong> is a simple Lambertian diffuse term with a fixed light direction. Ambient occlusion is approximated by sampling along the normal.
+    </p>
+    <p>
+        • The demo runs entirely on the GPU – no CPU‑side geometry or per‑frame updates beyond the time uniform.
+    </p>
+</section>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf -->
+<!-- Prompt: lightshow.md -->
+<!-- Generation Time: 27.01s -->
+<!-- Fallback Used: False -->

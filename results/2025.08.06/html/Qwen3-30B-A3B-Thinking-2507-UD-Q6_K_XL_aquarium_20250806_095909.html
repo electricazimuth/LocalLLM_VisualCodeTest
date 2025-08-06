@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Aquarium Simulation</title>
+    <style>
+        body { margin:0; overflow:hidden; background:#e0f7fa; }
+        canvas { display:block; margin:20px auto; border:1px solid #888; background:#c7f7ff; }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <script>
+        /* ---------- 1. Canvas & constants ---------- */
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        /* ---------- 2. Fish class ---------- */
+        class Fish {
+            constructor(x, y, speed, size, color) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.color = color;
+                this.speed = speed;          // pixels per second
+                this.angle = Math.random() * 2 * Math.PI; // direction in radians
+                this.wanderTimer = 0;        // time until next wander turn
+            }
+
+            /* Update position, velocity and behaviour */
+            update(dt, canvasW, canvasH) {
+                /* 2.1 Wander – change direction slowly */
+                this.wanderTimer += dt;
+                if (this.wanderTimer > 1) {                     // every ~1 s
+                    const wander = (Math.random() - 0.5) * Math.PI / 4; // ±22.5°
+                    this.angle += wander;
+                    this.wanderTimer = 0;
+                }
+
+                /* 2.2 Boundary handling – smooth turning */
+                const margin = 30;
+                let desiredAngle = this.angle;                   // default: keep current
+
+                if (this.x < margin)  desiredAngle = Math.PI / 2 + Math.random() * Math.PI / 4;   // turn right
+                if (this.x > canvasW - margin) desiredAngle = -Math.PI / 2 - Math.random() * Math.PI / 4; // turn left
+                if (this.y < margin)  desiredAngle = Math.PI + Math.random() * Math.PI / 4;   // turn down
+                if (this.y > canvasH - margin) desiredAngle = Math.random() * Math.PI / 4;      // turn up
+
+                // Smoothly interpolate current angle toward desired angle
+                const diff = ((desiredAngle - this.angle + Math.PI) % (2 * Math.PI)) - Math.PI;
+                const turnSpeed = 1.5;                               // rad/s
+                this.angle += Math.sign(diff) * Math.min(Math.abs(diff), turnSpeed * dt);
+
+                /* 2.3 Update velocity & position */
+                const vx = Math.cos(this.angle) * this.speed;
+                const vy = Math.sin(this.angle) * this.speed;
+                this.x += vx * dt;
+                this.y += vy * dt;
+            }
+
+            /* Draw the fish on the canvas */
+            draw(ctx, time) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                /* Body – simple ellipse */
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size, this.size / 2, 0, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.stroke();
+
+                /* Eye */
+                ctx.beginPath();
+                ctx.arc(this.size * 0.3, -this.size * 0.1, this.size * 0.05, 0, 2 * Math.PI);
+                ctx.fillStyle = '#000';
+                ctx.fill();
+
+                /* Tail – wiggle with time */
+                const tailOffset = Math.sin(time * 10) * this.size * 0.1;
+                ctx.beginPath();
+                ctx.moveTo(-this.size, 0);
+                ctx.lineTo(-this.size - this.size * 0.5, tailOffset);
+                ctx.lineTo(-this.size - this.size * 0.5, -tailOffset);
+                ctx.closePath();
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        /* ---------- 3. Create fish pool ---------- */
+        const fishCount = 12;
+        const fishArray = [];
+
+        function randomColor() {
+            const hue = Math.floor(Math.random() * 360);
+            return `hsl(${hue}, 70%, 60%)`;
+        }
+
+        for (let i = 0; i < fishCount; i++) {
+            const size = Math.random() * 15 + 15;          // 15–30 px
+            const speed = Math.random() * 30 + 30;         // 30–60 px/s
+            const x = Math.random() * (W - 2 * size) + size;
+            const y = Math.random() * (H - 2 * size) + size;
+            const color = randomColor();
+            fishArray.push(new Fish(x, y, speed, size, color));
+        }
+
+        /* ---------- 4. Animation loop ---------- */
+        let lastTimestamp = 0;
+        function gameLoop(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const dt = (timestamp - lastTimestamp) / 1000;   // delta time in seconds
+            lastTimestamp = timestamp;
+
+            /* Clear canvas with water colour */
+            ctx.fillStyle = '#c7f7ff';
+            ctx.fillRect(0, 0, W, H);
+
+            /* Update & draw each fish */
+            fishArray.forEach(fish => {
+                fish.update(dt, W, H);
+                fish.draw(ctx, timestamp / 1000);
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+
+    <section id="notes">
+        <h2>Developer Notes</h2>
+        <ul>
+            <li>All fish are instances of the <code>Fish</code> class, which encapsulates state and behaviour.</li>
+            <li>Movement is frame‑rate independent thanks to the <code>dt</code> (delta time) calculation.</li>
+            <li>Boundary handling uses a smooth turning algorithm rather than an instant bounce.</li>
+            <li>The tail wiggle is driven by a sine wave that depends on the global time.</li>
+            <li>Colors are generated using HSL for easy hue variation.</li>
+            <li>Feel free to tweak <code>fishCount</code>, <code>size</code>, <code>speed</code> ranges, or add more visual details.</li>
+        </ul>
+    </section>
+</body>
+</html>

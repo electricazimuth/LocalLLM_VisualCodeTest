@@ -104,8 +104,8 @@ class LlamaCppBackend(LLMBackend):
 
         if 'qwen' in model_name.lower():
             print(f"    Applying Qwen filter to Llama.cpp OAI payload.")
-            payload["temperature"] = 0.4
-            payload["top_k"] = 30
+            payload["temperature"] = 0.6
+            payload["top_k"] = 20
             # Qwen often uses a system prompt, add if needed
             # payload["messages"].insert(0, {"role": "system", "content": "You are a helpful assistant."})
 

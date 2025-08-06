@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { border: 1px solid #444; background-color: #000; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        /* ---------- Config & Helpers ---------- */
+        const GRAVITY = 200;               // px/s²
+        const LAUNCH_INTERVAL_MIN = 0.5;   // seconds
+        const LAUNCH_INTERVAL_MAX = 2.0;   // seconds
+        const ROCKET_SPEED_Y_MIN = -400;   // px/s
+        const ROCKET_SPEED_Y_MAX = -250;   // px/s
+        const ROCKET_SPEED_X_MIN = -50;    // px/s
+        const ROCKET_SPEED_X_MAX = 50;     // px/s
+        const ROCKET_FUSE_MIN = 1.0;       // seconds
+        const ROCKET_FUSE_MAX = 2.0;       // seconds
+        const ROCKET_TARGET_MIN = 0.3;     // fraction of height
+        const ROCKET_TARGET_MAX = 0.6;     // fraction of height
+        const EXPLOSION_PARTICLES_MIN = 30;
+        const EXPLOSION_PARTICLES_MAX = 80;
+        const EXPLOSION_SPEED_MIN = 50;    // px/s
+        const EXPLOSION_SPEED_MAX = 300;   // px/s
+        const EXPLOSION_LIFE_MIN = 1.0;    // seconds
+        const EXPLOSION_LIFE_MAX = 3.0;    // seconds
+        const EXPLOSION_SIZE_MIN = 2;      // px
+        const EXPLOSION_SIZE_MAX = 4;      // px
+
+        function rand(min, max) { return Math.random() * (max - min) + min; }
+        function randInt(min, max) { return Math.floor(rand(min, max)); }
+
+        /* ---------- Particle Array ---------- */
+        const particles = [];   // holds both rockets and sparks
+
+        /* ---------- Launch Timing ---------- */
+        let nextLaunch = performance.now() + rand(LAUNCH_INTERVAL_MIN, LAUNCH_INTERVAL_MAX) * 1000;
+
+        /* ---------- Rocket Launch ---------- */
+        function launchRocket(now) {
+            const x = rand(W / 2 - 30, W / 2 + 30);
+            const y = H;
+            const vx = rand(ROCKET_SPEED_X_MIN, ROCKET_SPEED_X_MAX);
+            const vy = rand(ROCKET_SPEED_Y_MIN, ROCKET_SPEED_Y_MAX);
+            const hue = randInt(0, 360);
+            const color = `hsl(${hue}, 100%, 50%)`;
+            const fuseTime = rand(ROCKET_FUSE_MIN, ROCKET_FUSE_MAX);
+            const targetHeight = rand(ROCKET_TARGET_MIN, ROCKET_TARGET_MAX) * H;
+
+            particles.push({
+                type: 'rocket',
+                x,
+                y,
+                vx,
+                vy,
+                hue,
+                color,
+                fuseTime,
+                targetHeight,
+                age: 0
+            });
+        }
+
+        /* ---------- Explosion Creation ---------- */
+        function createExplosion(rocket, now) {
+            const num = randInt(EXPLOSION_PARTICLES_MIN, EXPLOSION_PARTICLES_MAX);
+            for (let i = 0; i < num; i++) {
+                const angle = rand(0, Math.PI * 2);
+                const speed = rand(EXPLOSION_SPEED_MIN, EXPLOSION_SPEED_MAX);
+                const vx = Math.cos(angle) * speed;
+                const vy = Math.sin(angle) * speed;
+                const life = rand(EXPLOSION_LIFE_MIN, EXPLOSION_LIFE_MAX);
+                const size = rand(EXPLOSION_SIZE_MIN, EXPLOSION_SIZE_MAX);
+                const light = rand(50, 70);
+                const color = `hsl(${rocket.hue}, 100%, ${light}%)`;
+
+                particles.push({
+                    type: 'spark',
+                    x: rocket.x,
+                    y: rocket.y,
+                    vx,
+                    vy,
+                    life,
+                    age: 0,
+                    size,
+                    color
+                });
+            }
+        }
+
+        /* ---------- Game Loop ---------- */
+        let lastTimestamp = performance.now();
+
+        function gameLoop(timestamp) {
+            const dt = (timestamp - lastTimestamp) / 1000; // seconds
+            lastTimestamp = timestamp;
+
+            /* ---- Launch new rockets ---- */
+            if (timestamp >= nextLaunch) {
+                launchRocket(timestamp);
+                nextLaunch = timestamp + rand(LAUNCH_INTERVAL_MIN, LAUNCH_INTERVAL_MAX) * 1000;
+            }
+
+            /* ---- Update particles ---- */
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+
+                // Apply physics
+                p.vy += GRAVITY * dt;
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                p.age += dt;
+
+                if (p.type === 'rocket') {
+                    // Check for explosion
+                    if (p.age >= p.fuseTime || p.y <= p.targetHeight) {
+                        createExplosion(p, timestamp);
+                        particles.splice(i, 1); // remove rocket
+                    }
+                } else if (p.type === 'spark') {
+                    // Remove expired sparks
+                    if (p.age >= p.life) {
+                        particles.splice(i, 1);
+                    }
+                }
+            }
+
+            /* ---- Render ---- */
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+
+            for (const p of particles) {
+                if (p.type === 'rocket') {
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(p.x, p.y, 2, 2);
+                } else if (p.type === 'spark') {
+                    const alpha = 1 - p.age / p.life;
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1; // reset
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h2>How It Works</h2>
+        <p>
+            The simulation keeps a single array <code>particles</code> containing both
+            launching rockets and explosion fragments (sparks). Each frame we:
+        </p>
+        <ul>
+            <li>Calculate the delta‑time for frame‑rate independence.</li>
+            <li>Launch new rockets at random intervals.</li>
+            <li>Update every particle’s position, velocity (gravity), and age.</li>
+            <li>Detect when a rocket should explode and replace it with a burst of sparks.</li>
+            <li>Remove particles that have exceeded their lifespan.</li>
+            <li>Render all remaining particles with simple shapes and fading.</li>
+        </ul>
+        <p>
+            The use of <code>requestAnimationFrame</code> ensures smooth animations,
+            and iterating from the end of the array when removing items keeps the
+            performance high even with hundreds of particles.
+        </p>
+    </section>
+</body>
+</html>

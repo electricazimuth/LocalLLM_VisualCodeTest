@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vehicle Collision Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #333; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #666; background-color: #000; }
+    </style>
+</head>
+<body>
+<canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+<script>
+/* ------------------------------------------------------------------
+   Simulation constants
+   ------------------------------------------------------------------ */
+const canvas = document.getElementById('simulationCanvas');
+const ctx = canvas.getContext('2d');
+const WIDTH = canvas.width;
+const HEIGHT = canvas.height;
+
+const VEHICLE_COUNT = 7;
+const VEHICLE_RADIUS = 20;
+const VEHICLE_MIN_SPEED = 50;   // px/s
+const VEHICLE_MAX_SPEED = 150;  // px/s
+
+const PARTICLE_COUNT = 25;
+const PARTICLE_MIN_SPEED = 50;
+const PARTICLE_MAX_SPEED = 200;
+const PARTICLE_LIFESPAN = 1.5; // seconds
+
+const RESTART_DELAY = 2000; // ms after explosion
+
+/* ------------------------------------------------------------------
+   State machine
+   ------------------------------------------------------------------ */
+const STATE = { RUNNING: 0, EXPLODING: 1, RESTARTING: 2 };
+let simulationState = STATE.RUNNING;
+
+let vehicles = [];
+let particles = [];
+let boom = null;          // holds boom text data
+let restartTimer = 0;
+
+/* ------------------------------------------------------------------
+   Utility helpers
+   ------------------------------------------------------------------ */
+function rand(min, max) { return Math.random() * (max - min) + min; }
+function randInt(min, max) { return Math.floor(rand(min, max)); }
+function randColor() {
+    const r = randInt(0,255), g = randInt(0,255), b = randInt(0,255);
+    return `rgb(${r},${g},${b})`;
+}
+
+/* ------------------------------------------------------------------
+   Vehicle class
+   ------------------------------------------------------------------ */
+class Vehicle {
+    constructor() {
+        this.x = rand(VEHICLE_RADIUS, WIDTH - VEHICLE_RADIUS);
+        this.y = rand(VEHICLE_RADIUS, HEIGHT - VEHICLE_RADIUS);
+        const angle = rand(0, Math.PI*2);
+        const speed = rand(VEHICLE_MIN_SPEED, VEHICLE_MAX_SPEED);
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.radius = VEHICLE_RADIUS;
+        this.color = randColor();
+    }
+
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        // wrap
+        if (this.x < -this.radius) this.x = WIDTH + this.radius;
+        if (this.x > WIDTH + this.radius) this.x = -this.radius;
+        if (this.y < -this.radius) this.y = HEIGHT + this.radius;
+        if (this.y > HEIGHT + this.radius) this.y = -this.radius;
+    }
+
+    draw(ctx) {
+        // body
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x - this.radius, this.y - this.radius/2,
+                     this.radius*2, this.radius);
+        // wheels
+        ctx.beginPath();
+        ctx.arc(this.x - this.radius/2, this.y + this.radius/2, this.radius/4, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(this.x + this.radius/2, this.y + this.radius/2, this.radius/4, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+/* ------------------------------------------------------------------
+   Explosion particle class
+   ------------------------------------------------------------------ */
+class Particle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        const angle = rand(0, Math.PI*2);
+        const speed = rand(PARTICLE_MIN_SPEED, PARTICLE_MAX_SPEED);
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.lifespan = PARTICLE_LIFESPAN;
+        this.size = rand(3, 6);
+        this.color = randColor();
+    }
+
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.lifespan -= dt;
+    }
+
+    draw(ctx) {
+        const alpha = Math.max(this.lifespan / PARTICLE_LIFESPAN, 0);
+        ctx.fillStyle = `rgba(${this.color.match(/\d+/g).slice(0,3).join(',')},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    isAlive() { return this.lifespan > 0; }
+}
+
+/* ------------------------------------------------------------------
+   Boom text helper
+   ------------------------------------------------------------------ */
+class BoomText {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.time = 0;
+        this.duration = 0.8; // seconds
+    }
+
+    update(dt) {
+        this.time += dt;
+    }
+
+    draw(ctx) {
+        const progress = this.time / this.duration;
+        const size = 40 + 60 * progress; // grow
+        const alpha = 1 - progress; // fade
+        ctx.fillStyle = `rgba(255,255,0,${alpha})`;
+        ctx.font = `${size}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.fillText('BOOM', this.x, this.y);
+    }
+
+    isFinished() { return this.time > this.duration; }
+}
+
+/* ------------------------------------------------------------------
+   Initialization
+   ------------------------------------------------------------------ */
+function initVehicles() {
+    vehicles = [];
+    for (let i = 0; i < VEHICLE_COUNT; i++) {
+        vehicles.push(new Vehicle());
+    }
+}
+
+function initExplosion(atX, atY) {
+    particles = [];
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+        particles.push(new Particle(atX, atY));
+    }
+    boom = new BoomText(atX, atY);
+}
+
+/* ------------------------------------------------------------------
+   Collision detection
+   ------------------------------------------------------------------ */
+function checkCollisions() {
+    for (let i = 0; i < vehicles.length; i++) {
+        for (let j = i + 1; j < vehicles.length; j++) {
+            const v1 = vehicles[i];
+            const v2 = vehicles[j];
+            const dx = v1.x - v2.x;
+            const dy = v1.y - v2.y;
+            const distSq = dx*dx + dy*dy;
+            const radiusSum = v1.radius + v2.radius;
+            if (distSq <= radiusSum * radiusSum) {
+                // collision!
+                const collisionX = (v1.x + v2.x) / 2;
+                const collisionY = (v1.y + v2.y) / 2;
+                // remove the two vehicles
+                vehicles.splice(j, 1);
+                vehicles.splice(i, 1);
+                // start explosion
+                simulationState = STATE.EXPLODING;
+                initExplosion(collisionX, collisionY);
+                return; // only one collision per frame
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------
+   Main loop
+   ------------------------------------------------------------------ */
+let lastTime = performance.now();
+
+function animate(now) {
+    const dt = (now - lastTime) / 1000; // seconds
+    lastTime = now;
+
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+    switch (simulationState) {
+        case STATE.RUNNING:
+            vehicles.forEach(v => v.update(dt));
+            checkCollisions();
+            vehicles.forEach(v => v.draw(ctx));
+            break;
+
+        case STATE.EXPLODING:
+            particles.forEach(p => p.update(dt));
+            boom.update(dt);
+            particles.forEach(p => {
+                if (p.isAlive()) p.draw(ctx);
+            });
+            boom.draw(ctx);
+            // remove dead particles
+            particles = particles.filter(p => p.isAlive());
+            if (particles.length === 0 && boom.isFinished()) {
+                simulationState = STATE.RESTARTING;
+                restartTimer = 0;
+            }
+            break;
+
+        case STATE.RESTARTING:
+            restartTimer += dt * 1000;
+            if (restartTimer >= RESTART_DELAY) {
+                initVehicles();
+                simulationState = STATE.RUNNING;
+            }
+            break;
+    }
+
+    requestAnimationFrame(animate);
+}
+
+/* ------------------------------------------------------------------
+   Start
+   ------------------------------------------------------------------ */
+initVehicles();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

@@ -5,15 +5,15 @@ from pathlib import Path
 # --- General Configuration ---
 MAIN_START_TIME = datetime.datetime.now()
 # Directory where your models (.gguf) are stored
-MODEL_DIR = Path("Models").expanduser().resolve()
+MODEL_DIR = Path("/home/david/data/Models").expanduser().resolve()
 # Directory where your prompts (.md) are stored
-PROMPT_DIR = Path("prompts").expanduser().resolve()
+PROMPT_DIR = Path("/home/david/Documents/LocalLLM_VisualCodeTest/prompts").expanduser().resolve()
 # Directory to save the results
-RESULTS_DIR = Path("results").expanduser().resolve()
+RESULTS_DIR = Path("/home/david/Documents/LocalLLM_VisualCodeTest/results/2025.08.06/results").expanduser().resolve()
 
 # --- Model Filtering ---
 # Set max/min size to None to disable filtering by size
-MAX_SIZE_BYTES = 46 * (1024**3)  # 46 GiB (using 1024^3)
+MAX_SIZE_BYTES = 31 * (1024**3)  # 46 GiB (using 1024^3)
 MIN_SIZE_BYTES = 1 * (1024**3)   # 1 GiB
 
 # --- Server/API Configuration ---
@@ -26,7 +26,7 @@ PRIMARY_API_TIMEOUT = 1200 # Timeout for the main generation request (seconds)
 # --- Common Generation Parameters (will be translated by backends) ---
 # These provide a common ground, backends adapt them or use defaults if not applicable
 COMMON_GEN_PARAMS = {
-    "max_tokens": 12384, # Max tokens to generate
+    "max_tokens": 24576, # Max tokens to generate
     "temperature": 0.7,
     "top_k": 64,
     "top_p": 0.95,

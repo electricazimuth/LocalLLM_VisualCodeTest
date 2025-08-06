@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vehicle Collision Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #1a1a2e; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        canvas { 
+            display: block; 
+            margin: 20px auto; 
+            border: 2px solid #4cc9f0; 
+            background-color: #0f0f1a;
+            box-shadow: 0 0 20px rgba(76, 201, 240, 0.3);
+        }
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #4cc9f0;
+            color: #4cc9f0;
+            font-size: 14px;
+            text-align: center;
+        }
+        .controls h3 {
+            margin-top: 0;
+            color: #4cc9f0;
+            font-size: 16px;
+        }
+        .controls p {
+            margin: 5px 0;
+        }
+        .instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #4cc9f0;
+            color: #4cc9f0;
+            max-width: 300px;
+        }
+        .instructions h2 {
+            margin-top: 0;
+            color: #4cc9f0;
+        }
+        .instructions ul {
+            padding-left: 20px;
+            margin: 10px 0;
+        }
+        .instructions li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions">
+        <h2>Vehicle Collision Simulation</h2>
+        <p>Simple vehicles move around the canvas, wrapping around edges.</p>
+        <ul>
+            <li>When vehicles collide, they explode in a colorful burst</li>
+            <li>After explosion, simulation restarts automatically</li>
+            <li>Multiple vehicles with different colors and speeds</li>
+            <li>Smooth animation with delta time</li>
+        </ul>
+    </div>
+    
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+    
+    <div class="controls">
+        <h3>Simulation Controls</h3>
+        <p>Automatically restarts after each collision</p>
+        <p>Click to reset manually</p>
+    </div>
+
+    <script>
+        // Constants
+        const CANVAS_WIDTH = 512;
+        const CANVAS_HEIGHT = 512;
+        const VEHICLE_COUNT = 8;
+        const EXPLOSION_PARTICLES = 25;
+        const EXPLOSION_DURATION = 3000; // ms
+
+        // Simulation states
+        const SIMULATION_STATES = {
+            RUNNING: 'RUNNING',
+            EXPLODING: 'EXPLODING',
+            RESTARTING: 'RESTARTING'
+        };
+
+        // Vehicle class
+        class Vehicle {
+            constructor(x, y, vx, vy, width, height, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.width = width;
+                this.height = height;
+                this.color = color;
+                this.active = true;
+                this.rotation = 0;
+                this.rotationSpeed = (Math.random() - 0.5) * 0.02;
+            }
+
+            update(dt) {
+                // Update position
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                
+                // Update rotation
+                this.rotation += this.rotationSpeed * dt;
+                
+                // Wrap around edges
+                if (this.x < -this.width) this.x = CANVAS_WIDTH;
+                else if (this.x > CANVAS_WIDTH) this.x = 0;
+                if (this.y < -this.height) this.y = CANVAS_HEIGHT;
+                else if (this.y > CANVAS_HEIGHT) this.y = 0;
+            }
+
+            draw(ctx) {
+                if (!this.active) return;
+                
+                ctx.save();
+                ctx.translate(this.x + this.width/2, this.y + this.height/2);
+                ctx.rotate(this.rotation);
+                
+                // Draw vehicle body
+                ctx.fillStyle = this.color;
+                ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+                
+                // Draw wheels
+                const wheelSize = this.height * 0.3;
+                const wheelOffset = this.width * 0.3;
+                
+                ctx.fillStyle = '#333';
+                ctx.fillRect(-wheelOffset - wheelSize/2, this.height/2 - wheelSize/2, wheelSize, wheelSize);
+                ctx.fillRect(wheelOffset - wheelSize/2, this.height/2 - wheelSize/2, wheelSize, wheelSize);
+                
+                // Draw headlights
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(-wheelOffset - 5, -this.height/2 + 5, 5, 5);
+                ctx.fillRect(wheelOffset, -this.height/2 + 5, 5, 5);
+                
+                ctx.restore();
+            }
+        }
+
+        // Explosion particle class
+        class ExplosionParticle {
+            constructor(x, y, vx, vy, size, color, lifespan) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = size;
+                this.color = color;
+                this.lifespan = lifespan;
+                this.maxSize = size * 1.5;
+            }
+
+            update(dt) {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.lifespan -= dt;
+                this.size = this.maxSize * (this.lifespan / 1000);
+            }
+
+            draw(ctx) {
+                if (this.lifespan <= 0) return;
+                
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = this.lifespan / 1000;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        // Main simulation
+        class VehicleCollisionSimulation {
+            constructor() {
+                this.canvas = document.getElementById('simulationCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.canvas.width = CANVAS_WIDTH;
+                this.canvas.height = CANVAS_HEIGHT;
+                
+                this.simulationState = SIMULATION_STATES.RUNNING;
+                this.restartTimer = 0;
+                this.boomText = null;
+                this.explosionParticles = [];
+                this.vehicles = [];
+                this.lastTime = 0;
+                
+                // Initialize simulation
+                this.init();
+                this.startAnimation();
+            }
+
+            init() {
+                this.vehicles = [];
+                this.explosionParticles = [];
+                
+                // Create vehicles
+                for (let i = 0; i < VEHICLE_COUNT; i++) {
+                    const x = Math.random() * CANVAS_WIDTH;
+                    const y = Math.random() * CANVAS_HEIGHT;
+                    const vx = (Math.random() - 0.5) * 2.5;
+                    const vy = (Math.random() - 0.5) * 2.5;
+                    const width = 30 + Math.random() * 20;
+                    const height = 20 + Math.random() * 15;
+                    const hue = Math.random() * 360;
+                    const color = `hsl(${hue}, 70%, 50%)`;
+                    
+                    this.vehicles.push(new Vehicle(x, y, vx, vy, width, height, color));
+                }
+            }
+
+            startAnimation() {
+                this.lastTime = performance.now();
+                requestAnimationFrame((time) => this.animationLoop(time));
+            }
+
+            animationLoop(time) {
+                const dt = (time - this.lastTime) / 1000; // Delta time in seconds
+                this.lastTime = time;
+                
+                // Update simulation state
+                this.updateState(dt);
+                
+                // Draw frame
+                this.draw();
+                
+                // Continue animation
+                requestAnimationFrame((time) => this.animationLoop(time));
+            }
+
+            updateState(dt) {
+                switch (this.simulationState) {
+                    case SIMULATION_STATES.RUNNING:
+                        this.updateVehicles(dt);
+                        this.checkCollisions();
+                        break;
+                    case SIMULATION_STATES.EXPLODING:
+                        this.updateExplosionParticles(dt);
+                        this.updateBoomText(dt);
+                        if (this.explosionParticles.length === 0 && !this.boomText) {
+                            this.simulationState = SIMULATION_STATES.RESTARTING;
+                            this.restartTimer = EXPLOSION_DURATION;
+                        }
+                        break;
+                    case SIMULATION_STATES.RESTARTING:
+                        this.restartTimer -= dt;
+                        if (this.restartTimer <= 0) {
+                            this.init();
+                            this.simulationState = SIMULATION_STATES.RUNNING;
+                        }
+                        break;
+                }
+            }
+
+            updateVehicles(dt) {
+                for (const vehicle of this.vehicles) {
+                    if (vehicle.active) {
+                        vehicle.update(dt);
+                    }
+                }
+            }
+
+            checkCollisions() {
+                for (let i = 0; i < this.vehicles.length; i++) {
+                    if (!this.vehicles[i].active) continue;
+                    
+                    for (let j = i + 1; j < this.vehicles.length; j++) {
+                        if (!this.vehicles[j].active) continue;
+                        
+                        if (this.collides(this.vehicles[i], this.vehicles[j])) {
+                            // Trigger explosion
+                            this.triggerExplosion(
+                                (this.vehicles[i].x + this.vehicles[j].x) / 2,
+                                (this.vehicles[i].y + this.vehicles[j].y) / 2
+                            );
+                            
+                            // Mark vehicles as inactive
+                            this.vehicles[i].active = false;
+                            this.vehicles[j].active = false;
+                            
+                            // Stop collision checking
+                            break;
+                        }
+                    }
+                }
+            }
+
+            collides(v1, v2) {
+                return v1.x < v2.x + v2.width &&
+                       v1.x + v1.width > v2.x &&
+                       v1.y < v2.y + v2.height &&
+                       v1.y + v1.height > v2.y;
+            }
+
+            triggerExplosion(x, y) {
+                this.simulationState = SIMULATION_STATES.EXPLODING;
+                
+                // Create explosion particles
+                for (let i = 0; i < EXPLOSION_PARTICLES; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 2 + Math.random() * 5;
+                    const size = 2 + Math.random() * 5;
+                    const hue = Math.random() * 360;
+                    const color = `hsl(${hue}, 100%, 70%)`;
+                    
+                    this.explosionParticles.push(
+                        new ExplosionParticle(
+                            x, y,
+                            Math.cos(angle) * speed,
+                            Math.sin(angle) * speed,
+                            size,
+                            color,
+                            1000
+                        )
+                    );
+                }
+                
+                // Set boom text
+                this.boomText = {
+                    x: x,
+                    y: y,
+                    opacity: 1.0,
+                    fadeSpeed: 0.02
+                };
+            }
+
+            updateExplosionParticles(dt) {
+                for (let i = this.explosionParticles.length - 1; i >= 0; i--) {
+                    this.explosionParticles[i].update(dt);
+                    if (this.explosionParticles[i].lifespan <= 0) {
+                        this.explosionParticles.splice(i, 1);
+                    }
+                }
+            }
+
+            updateBoomText(dt) {
+                if (this.boomText) {
+                    this.boomText.opacity -= this.boomText.fadeSpeed;
+                    if (this.boomText.opacity <= 0) {
+                        this.boomText = null;
+                    }
+                }
+            }
+
+            draw() {
+                // Clear canvas
+                this.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                // Draw background
+                this.drawBackground();
+                
+                // Draw according to state
+                if (this.simulationState === SIMULATION_STATES.RUNNING) {
+                    this.drawVehicles();
+                } else if (this.simulationState === SIMULATION_STATES.EXPLODING) {
+                    this.drawExplosion();
+                    this.drawBoomText();
+                }
+            }
+
+            drawBackground() {
+                // Draw subtle gradient background
+                const gradient = this.ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+                gradient.addColorStop(0, '#0f0f1a');
+                gradient.addColorStop(1, '#1a1a2e');
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                // Draw grid lines
+                this.ctx.strokeStyle = 'rgba(76, 201, 240, 0.1)';
+                this.ctx.lineWidth = 1;
+                for (let i = 0; i < CANVAS_WIDTH; i += 32) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(i, 0);
+                    this.ctx.lineTo(i, CANVAS_HEIGHT);
+                    this.ctx.stroke();
+                }
+                for (let i = 0; i < CANVAS_HEIGHT; i += 32) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, i);
+                    this.ctx.lineTo(CANVAS_WIDTH, i);
+                    this.ctx.stroke();
+                }
+            }
+
+            drawVehicles() {
+                for (const vehicle of this.vehicles) {
+                    vehicle.draw(this.ctx);
+                }
+            }
+
+            drawExplosion() {
+                for (const particle of this.explosionParticles) {
+                    particle.draw(this.ctx);
+                }
+            }
+
+            drawBoomText() {
+                if (!this.boomText) return;
+                
+                this.ctx.font = 'bold 32px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = `rgba(255, 255, 255, ${this.boomText.opacity})`;
+                this.ctx.fillText('BOOM', this.boomText.x, this.boomText.y);
+                
+                // Add glow effect
+                this.ctx.shadowColor = 'rgba(255, 255, 255, 0.7)';
+                this.ctx.shadowBlur = 10;
+                this.ctx.fillText('BOOM', this.boomText.x, this.boomText.y);
+                this.ctx.shadowBlur = 0;
+            }
+        }
+
+        // Start the simulation
+        document.addEventListener('DOMContentLoaded', () => {
+            const simulation = new VehicleCollisionSimulation();
+            
+            // Allow manual reset
+            document.getElementById('simulationCanvas').addEventListener('click', () => {
+                simulation.init();
+                simulation.simulationState = SIMULATION_STATES.RUNNING;
+            });
+        });
+    </script>
+</body>
+</html>
