@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls in a Spinning Heptagon</title>
+    <style>
+        body { margin:0; overflow:hidden; background:#f0f0f0; }
+        canvas { border:1px solid #000; background:#fff; display:block; margin:20px auto; }
+    </style>
+</head>
+<body>
+<canvas id="gameCanvas" width="500" height="500"></canvas>
+<script>
+/* --------------------------------------------------------------
+   Bouncing balls inside a rotating heptagon
+   -------------------------------------------------------------- */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+/* ---- constants ------------------------------------------------ */
+const BALL_COUNT   = 20;
+const BALL_RADIUS  = 14;                     // all balls same radius
+const GRAVITY      = 0.35;                    // px / frame²
+const WALL_DAMP    = 0.85;                    // energy loss on wall bounce
+const BALL_DAMP    = 0.95;                    // restitution for ball‑ball
+const FRICTION     = 0.999;                   // tiny air drag
+const ROT_SPEED    = (2*Math.PI) / 5000;      // rad per ms → 360°/5s
+const HEX_RADIUS   = 200;                    // distance from centre to vertices
+
+/* ---- colours (provided) --------------------------------------- */
+const BALL_COLOURS = [
+  "#f8b862","#f6ad49","#f39800","#f08300","#ec6d51","#ee7948","#ed6d3d",
+  "#ec6800","#ec6800","#ee7800","#eb6238","#ea5506","#ea5506","#eb6101",
+  "#e49e61","#e45e32","#e17b34","#dd7a56","#db8449","#d66a35"
+];
+
+/* ---- geometry helpers ------------------------------------------ */
+function rotatePoint(px, py, angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return {x: px*c - py*s, y: px*s + py*c};
+}
+function dot(ax, ay, bx, by){ return ax*bx + ay*by; }
+function length(x,y){ return Math.hypot(x,y); }
+function normalize(x,y){
+    const l = Math.hypot(x,y);
+    return l===0 ? {x:0,y:0} : {x:x/l, y:y/l};
+}
+
+/* ---- Ball class ------------------------------------------------ */
+class Ball{
+    constructor(i){
+        this.id = i+1;
+        this.r = BALL_RADIUS;
+        this.mass = this.r*this.r;               // proportional to area
+        this.col = BALL_COLOURS[i];
+        // start from centre with a small random push
+        this.x = W/2;
+        this.y = H/2;
+        const ang = Math.random()*2*Math.PI;
+        const speed = Math.random()*2+1;
+        this.vx = Math.cos(ang)*speed;
+        this.vy = Math.sin(ang)*speed;
+    }
+    applyForces(){
+        this.vy += GRAVITY;
+        this.vx *= FRICTION;
+        this.vy *= FRICTION;
+    }
+    move(){
+        this.x += this.vx;
+        this.y += this.vy;
+    }
+    draw(){
+        ctx.fillStyle = this.col;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle = "#333";
+        ctx.stroke();
+
+        // number
+        ctx.fillStyle = "#000";
+        ctx.font = `${this.r}px Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(this.id, this.x, this.y);
+    }
+}
+
+/* ---- initialise balls ------------------------------------------ */
+const balls = [];
+for(let i=0;i<BALL_COUNT;i++) balls.push( new Ball(i) );
+
+/* ---- heptagon vertices & edge normals (re‑computed each frame) */
+function getHeptagon(angle){
+    const verts = [];
+    const normals = [];
+    const step = 2*Math.PI/7;
+    for(let i=0;i<7;i++){
+        const a = angle + i*step;
+        verts.push({
+            x: W/2 + HEX_RADIUS*Math.cos(a),
+            y: H/2 + HEX_RADIUS*Math.sin(a)
+        });
+    }
+    // compute outward normals for each edge (CCW polygon)
+    for(let i=0;i<7;i++){
+        const v1 = verts[i];
+        const v2 = verts[(i+1)%7];
+        const ex = v2.x - v1.x;
+        const ey = v2.y - v1.y;
+        // outward normal (ey, -ex) – not yet unit length
+        const n = normalize(ey, -ex);
+        normals.push(n);
+    }
+    return {verts, normals};
+}
+
+/* ---- wall collision (ball vs heptagon) ------------------------- */
+function wallCollision(ball, poly){
+    const {verts, normals} = poly;
+    for(let i=0;i<7;i++){
+        const v = verts[i];
+        const n = normals[i];
+        // signed distance from ball centre to edge line
+        const d = (ball.x - v.x)*n.x + (ball.y - v.y)*n.y;
+        if(d > ball.r){                     // outside the wall
+            // push ball back inside
+            const penetration = d - ball.r;
+            ball.x -= penetration * n.x;
+            ball.y -= penetration * n.y;
+            // reflect velocity
+            const vdotn = ball.vx*n.x + ball.vy*n.y;
+            ball.vx -= 2*vdotn*n.x;
+            ball.vy -= 2*vdotn*n.y;
+            // damping
+            ball.vx *= WALL_DAMP;
+            ball.vy *= WALL_DAMP;
+        }
+    }
+}
+
+/* ---- ball‑ball collision --------------------------------------- */
+function ballCollision(b1, b2){
+    const dx = b2.x - b1.x;
+    const dy = b2.y - b1.y;
+    const distSq = dx*dx + dy*dy;
+    const rad = b1.r + b2.r;
+    if(distSq === 0) return;               // avoid divide by zero
+    if(distSq < rad*rad){
+        const dist = Math.sqrt(distSq);
+        const nx = dx/dist;
+        const ny = dy/dist;
+
+        // relative velocity
+        const rvx = b1.vx - b2.vx;
+        const rvy = b1.vy - b2.vy;
+        const velAlongNormal = rvx*nx + rvy*ny;
+        if(velAlongNormal > 0) return;    // moving apart
+
+        const e = BALL_DAMP;               // restitution
+        const invMass1 = 1/b1.mass;
+        const invMass2 = 1/b2.mass;
+
+        const j = -(1+e)*velAlongNormal / (invMass1 + invMass2);
+        const impulseX = j*nx;
+        const impulseY = j*ny;
+
+        b1.vx += impulseX*invMass1;
+        b1.vy += impulseY*invMass1;
+        b2.vx -= impulseX*invMass2;
+        b2.vy -= impulseY*invMass2;
+
+        // positional correction to avoid sinking
+        const percent = 0.2;               // usually 20% to 80%
+        const correction = (rad - dist) / (invMass1 + invMass2) * percent;
+        const correctionX = correction * nx;
+        const correctionY = correction * ny;
+        b1.x += correctionX * invMass1;
+        b1.y += correctionY * invMass1;
+        b2.x -= correctionX * invMass2;
+        b2.y -= correctionY * invMass2;
+    }
+}
+
+/* ---- main loop ------------------------------------------------ */
+let startTime = null;
+function gameLoop(timestamp){
+    if(!startTime) startTime = timestamp;
+    const elapsed = timestamp - startTime;
+
+    // clear
+    ctx.clearRect(0,0,W,H);
+
+    // current rotation angle of heptagon
+    const angle = elapsed * ROT_SPEED;
+    const poly = getHeptagon(angle);
+
+    // draw heptagon (stroke)
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    poly.verts.forEach((v,i)=>{
+        if(i===0) ctx.moveTo(v.x, v.y);
+        else ctx.lineTo(v.x, v.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    // update balls
+    balls.forEach(b=>{ b.applyForces(); b.move(); });
+    // wall collisions
+    balls.forEach(b=> wallCollision(b, poly));
+    // ball‑ball collisions (naive O(n²) – fine for 20 balls)
+    for(let i=0;i<BALL_COUNT;i++){
+        for(let j=i+1;j<BALL_COUNT;j++){
+            ballCollision(balls[i], balls[j]);
+        }
+    }
+    // draw balls (after physics)
+    balls.forEach(b=> b.draw());
+
+    requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+</script>
+
+<section id="notes">
+<p>All physics (gravity, wall bounce with damping, ball‑ball elastic collisions) are implemented
+without any external libraries. The heptagon rotates at 360°/5 s, its edges are recomputed each
+frame and used as static collision planes. The simulation runs at 60 fps using
+<code>requestAnimationFrame</code>.</p>
+</section>
+</body>
+</html>

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ray‑marching Psychedelic Metaballs</title>
+<style>
+    body{margin:0;overflow:hidden;background:#000}
+    canvas{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<canvas id="glCanvas"></canvas>
+
+<!-- -------------------------------------------------------------
+     Vertex shader – a simple full‑screen quad
+-------------------------------------------------------------- -->
+<script id="vs" type="x-shader/x-vertex">
+attribute vec2 a_position;
+varying vec2 v_uv;
+void main(){
+    v_uv = a_position * 0.5 + 0.5;          // [0,1] UVs
+    gl_Position = vec4(a_position,0.0,1.0);
+}
+</script>
+
+<!-- -------------------------------------------------------------
+     Fragment shader – ray marching the metaballs
+-------------------------------------------------------------- -->
+<script id="fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform vec2  u_resolution;   // canvas size in pixels
+uniform float u_time;         // elapsed time in seconds
+
+varying vec2 v_uv;
+
+// ---------- utilities -------------------------------------------------
+float hash(float n){return fract(sin(n)*43758.5453123);}
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}
+
+// HSV → RGB (h∈[0,1], s∈[0,1], v∈[0,1])
+vec3 hsv2rgb(vec3 c){
+    vec3 rgb = clamp( abs(mod(c.x*6.0+vec3(0.0,4.0,2.0),
+                               6.0)-3.0)-1.0,
+                     0.0,
+                     1.0 );
+    rgb = rgb*rgb*(3.0-2.0*rgb); // cubic smoothing
+    return c.z * mix( vec3(1.0), rgb, c.y);
+}
+
+// ---------- signed distance functions ---------------------------------
+float sdSphere(vec3 p, vec3 c, float r){
+    return length(p-c)-r;
+}
+
+// smooth minimum (polynomial version – cheap & smooth)
+float smin( float a, float b, float k ){
+    float h = clamp( 0.5 + 0.5*(b-a)/k, 0.0, 1.0 );
+    return mix( b, a, h ) - k*h*(1.0-h);
+}
+
+// scene SDF – a set of moving metaballs
+float map(vec3 p){
+    const int N = 7;                     // number of metaballs
+    float d = 1e5;
+    float k = 0.4;                       // smoothness factor
+
+    // each metaball follows a simple Lissajous‑like path
+    for(int i=0;i<N;i++){
+        float fi = float(i);
+        // unique offsets per ball
+        float t = u_time*0.6 + fi*1.23;
+        vec3 c = vec3(
+            sin(t*0.9 + fi)*2.0,
+            cos(t*1.1 + fi*1.3)*2.0,
+            sin(t*0.7 + fi*0.8)*2.0
+        );
+        // radius slowly pulsates
+        float r = 0.7 + 0.3*sin(t*2.0 + fi);
+        d = smin(d, sdSphere(p,c,r), k);
+    }
+    return d;
+}
+
+// ---------- normal estimation -----------------------------------------
+vec3 estimateNormal(vec3 p){
+    const float eps = 0.0005;
+    vec2 e = vec2(1.0,-1.0)*eps;
+    return normalize( e.xyy*map(p + e.xyy) +
+                      e.yyx*map(p + e.yyx) +
+                      e.yxy*map(p + e.yxy) +
+                      e.xxx*map(p + e.xxx) );
+}
+
+// ---------- lighting ---------------------------------------------------
+vec3 lighting(vec3 p, vec3 n, vec3 rd){
+    // simple directional light that slowly rotates
+    vec3 lightDir = normalize(vec3(
+        sin(u_time*0.3),
+        cos(u_time*0.5),
+        -0.5
+    ));
+
+    // diffuse
+    float diff = max(dot(n,lightDir),0.0);
+
+    // rim lighting (adds that glow on edges)
+    float rim = pow(1.0 - max(dot(n, -rd),0.0), 2.0);
+
+    // ambient occlusion approximation (cheap)
+    float ao = clamp( map(p + n*0.1) / 0.1, 0.0, 1.0 );
+
+    // combine
+    vec3 col = vec3(0.1) + diff*vec3(1.0) + rim*vec3(0.5);
+    col *= ao;
+    return col;
+}
+
+// ---------- main ray‑marcher -----------------------------------------
+void main(){
+    // normalised pixel coordinates ([-1,1] with correct aspect)
+    vec2 uv = (v_uv*2.0-1.0);
+    uv.x *= u_resolution.x/u_resolution.y;
+
+    // camera (orbiting slowly around origin)
+    float camR = 6.0;
+    float camTheta = u_time*0.2;
+    vec3 camPos = vec3( camR*sin(camTheta), 0.0, camR*cos(camTheta) );
+    vec3 target = vec3(0.0);
+    vec3 forward = normalize(target - camPos);
+    vec3 right   = normalize(cross(vec3(0.0,1.0,0.0), forward));
+    vec3 up      = cross(forward, right);
+
+    // ray direction for this pixel
+    float fov = 45.0; // degrees
+    vec3 rd = normalize( forward + uv.x*right*tan(radians(fov)*0.5) +
+                                   uv.y*up   *tan(radians(fov)*0.5) );
+
+    // ray‑march loop
+    const int   MAX_STEPS = 128;
+    const float MAX_DIST  = 30.0;
+    const float SURF_EPS  = 0.001;
+
+    float t = 0.0;
+    int i;
+    for(i=0;i<MAX_STEPS;i++){
+        vec3 pos = camPos + rd*t;
+        float dist = map(pos);
+        if(dist < SURF_EPS){
+            // hit – compute normal, lighting and colour
+            vec3 n = estimateNormal(pos);
+            vec3 col = lighting(pos,n,rd);
+
+            // colour modulation – psychedelic hue shift
+            float hue = (atan(n.z,n.x)/6.2831853) + 0.5 + 0.2*sin(u_time);
+            float sat = 0.8;
+            float val = 0.9;
+            col *= hsv2rgb(vec3(hue, sat, val));
+
+            gl_FragColor = vec4(col,1.0);
+            break;
+        }
+        if(t>MAX_DIST) break;
+        t += dist;
+    }
+
+    // background – dark, with a faint vignette
+    if(i==MAX_STEPS || t>MAX_DIST){
+        float vignette = pow(16.0*uv.x*uv.x*uv.y*uv.y,0.3);
+        gl_FragColor = vec4(0.0,0.0,0.0,1.0) * vignette;
+    }
+}
+</script>
+
+<script>
+/* --------------------------------------------------------------
+   Boilerplate WebGL setup (no external libs)
+-------------------------------------------------------------- */
+const canvas = document.getElementById('glCanvas');
+const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+if (!gl) { alert('WebGL not supported'); throw new Error('WebGL not supported'); }
+
+// Resize canvas to fill the screen
+function resize(){
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    gl.viewport(0,0,canvas.width,canvas.height);
+}
+window.addEventListener('resize',resize);
+resize();
+
+// Compile a shader ------------------------------------------------
+function compile(src, type){
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+        console.error('Shader compile error:', gl.getShaderInfoLog(sh));
+        gl.deleteShader(sh);
+        return null;
+    }
+    return sh;
+}
+
+// Link program ----------------------------------------------------
+function link(vs,fs){
+    const prog = gl.createProgram();
+    gl.attachShader(prog,vs);
+    gl.attachShader(prog,fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+        console.error('Program link error:', gl.getProgramInfoLog(prog));
+        gl.deleteProgram(prog);
+        return null;
+    }
+    return prog;
+}
+
+// Grab shader sources from script tags
+const vsSource = document.getElementById('vs').text.trim();
+const fsSource = document.getElementById('fs').text.trim();
+
+const vs = compile(vsSource, gl.VERTEX_SHADER);
+const fs = compile(fsSource, gl.FRAGMENT_SHADER);
+const prog = link(vs,fs);
+gl.useProgram(prog);
+
+// Full‑screen quad (two triangles covering NDC)
+const quad = new Float32Array([
+    -1,-1,
+     1,-1,
+    -1, 1,
+    -1, 1,
+     1,-1,
+     1, 1
+]);
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+
+const aPosLoc = gl.getAttribLocation(prog, 'a_position');
+gl.enableVertexAttribArray(aPosLoc);
+gl.vertexAttribPointer(aPosLoc, 2, gl.FLOAT, false, 0, 0);
+
+// Uniform locations
+const uResLoc = gl.getUniformLocation(prog, 'u_resolution');
+const uTimeLoc = gl.getUniformLocation(prog, 'u_time');
+
+// Render loop ----------------------------------------------------
+let start = performance.now();
+function render(now){
+    now = now*0.001; // seconds
+    const elapsed = now - start;
+
+    // update uniforms
+    gl.uniform2f(uResLoc, canvas.width, canvas.height);
+    gl.uniform1f(uTimeLoc, elapsed);
+
+    // draw
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

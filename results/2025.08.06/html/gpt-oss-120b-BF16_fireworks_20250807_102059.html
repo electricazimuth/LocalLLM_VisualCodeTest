@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { margin:0; overflow:hidden; background:#111; }
+        canvas { display:block; margin:0 auto; background:#000; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+
+    <script>
+        /* --------------------------------------------------------------
+         *  Fireworks – autonomous particle simulation
+         *  -----------------------------------------------------------*/
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx     = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        /* --------------------------------------------------------------
+         *  Global constants
+         *  -----------------------------------------------------------*/
+        const GRAVITY = 200;               // px / s² (downwards)
+        const ROCKET_MIN_SPEED = 250;      // px / s (initial upward speed)
+        const ROCKET_MAX_SPEED = 350;      // px / s
+        const ROCKET_SPREAD    = 30;       // horizontal spread px / s
+        const ROCKET_MIN_FUSE  = 1.2;      // seconds before explosion
+        const ROCKET_MAX_FUSE  = 1.8;      // seconds
+
+        const SPARK_MIN_SPEED = 60;        // px / s
+        const SPARK_MAX_SPEED = 200;       // px / s
+        const SPARK_MIN_COUNT = 30;
+        const SPARK_MAX_COUNT = 80;
+        const SPARK_MIN_LIFE  = 1.0;       // seconds
+        const SPARK_MAX_LIFE  = 2.5;       // seconds
+
+        /* --------------------------------------------------------------
+         *  Helper utilities
+         *  -----------------------------------------------------------*/
+        function rand(min, max) { return Math.random() * (max - min) + min; }
+
+        function randomColor() {
+            // bright, fully‑saturated colours (hsl)
+            const hue = Math.floor(Math.random() * 360);
+            return `hsl(${hue},100%,60%)`;
+        }
+
+        function randomLaunchDelay() {
+            // 0.5 – 2 seconds between launches
+            return rand(0.5, 2);
+        }
+
+        /* --------------------------------------------------------------
+         *  Particle classes
+         *  -----------------------------------------------------------*/
+        class Rocket {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = rand(-ROCKET_SPREAD, ROCKET_SPREAD);
+                this.vy = -rand(ROCKET_MIN_SPEED, ROCKET_MAX_SPEED);
+                this.color = randomColor();
+                this.size  = 3;
+                this.age   = 0;
+                this.fuse  = rand(ROCKET_MIN_FUSE, ROCKET_MAX_FUSE);
+            }
+
+            update(dt) {
+                this.age += dt;
+                this.vy += GRAVITY * dt;          // gravity pulls down
+                this.x  += this.vx * dt;
+                this.y  += this.vy * dt;
+
+                // explode either when fuse expires or when upward motion stops
+                if (this.age >= this.fuse || this.vy >= 0) {
+                    this.explode();
+                    return false;                 // remove rocket from array
+                }
+                return true;
+            }
+
+            explode() {
+                const count = Math.floor(rand(SPARK_MIN_COUNT, SPARK_MAX_COUNT));
+                for (let i = 0; i < count; i++) {
+                    particles.push(new Spark(this.x, this.y, this.color));
+                }
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Spark {
+            constructor(x, y, color) {
+                const speed = rand(SPARK_MIN_SPEED, SPARK_MAX_SPEED);
+                const angle = rand(0, Math.PI * 2);
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.x  = x;
+                this.y  = y;
+                this.color = color;
+                this.size  = rand(2, 4);
+                this.life  = rand(SPARK_MIN_LIFE, SPARK_MAX_LIFE);
+                this.age   = 0;
+            }
+
+            update(dt) {
+                this.age += dt;
+                if (this.age >= this.life) return false; // dead
+
+                this.vy += GRAVITY * dt;
+                this.x  += this.vx * dt;
+                this.y  += this.vy * dt;
+                return true;
+            }
+
+            draw(ctx) {
+                const alpha = 1 - this.age / this.life; // fade out
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        /* --------------------------------------------------------------
+         *  Global state
+         *  -----------------------------------------------------------*/
+        const particles = [];                     // rockets + sparks
+        let lastTimestamp = 0;
+        let launchTimer   = 0;
+        let nextLaunch    = randomLaunchDelay();
+
+        function spawnRocket() {
+            // launch from the bottom centre, with a small horizontal spread
+            const x = W / 2 + rand(-W * 0.1, W * 0.1);
+            const y = H;
+            particles.push(new Rocket(x, y));
+        }
+
+        /* --------------------------------------------------------------
+         *  Main loop – requestAnimationFrame
+         *  -----------------------------------------------------------*/
+        function gameLoop(timestamp) {
+            // delta time in seconds (frame‑rate independent)
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const dt = (timestamp - lastTimestamp) / 1000;
+            lastTimestamp = timestamp;
+
+            /* ---- autonomous launching ---- */
+            launchTimer += dt;
+            if (launchTimer >= nextLaunch) {
+                spawnRocket();
+                launchTimer = 0;
+                nextLaunch = randomLaunchDelay();
+            }
+
+            /* ---- update all particles ---- */
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const alive = particles[i].update(dt);
+                if (!alive) particles.splice(i, 1);      // efficient removal
+            }
+
+            /* ---- render ---- */
+            ctx.fillStyle = '#000';                     // dark background
+            ctx.fillRect(0, 0, W, H);
+
+            for (const p of particles) p.draw(ctx);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // start the simulation
+        requestAnimationFrame(gameLoop);
+    </script>
+
+    <section id="notes">
+        <h2>Notes</h2>
+        <ul>
+            <li>All physics uses seconds as the time unit – the <code>dt</code> value makes the animation independent of the actual frame‑rate.</li>
+            <li>Rockets and sparks share a single <code>particles</code> array to keep the update/draw loops simple.</li>
+            <li>Removal is performed by iterating backwards and <code>splice</code>‑ing dead items – O(n) with a very low constant factor.</li>
+            <li>Colours are generated with <code>hsl()</code> for vivid, random hues.</li>
+            <li>Feel free to tweak the constants (gravity, speeds, counts) to change the visual feel.</li>
+        </ul>
+    </section>
+</body>
+</html>

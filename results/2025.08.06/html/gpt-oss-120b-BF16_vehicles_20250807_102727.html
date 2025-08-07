@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vehicle Collision Simulation</title>
+<style>
+    body { margin:0; overflow:hidden; background:#333; }
+    canvas { display:block; margin:20px auto; border:1px solid #666; background:#000; }
+</style>
+</head>
+<body>
+<canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+<script>
+/* --------------------------------------------------------------
+   Simulation constants & state handling
+   -------------------------------------------------------------- */
+const canvas = document.getElementById('simulationCanvas');
+const ctx = canvas.getContext('2d');
+
+const STATE = { RUNNING: 'RUNNING', EXPLODING: 'EXPLODING', RESTARTING: 'RESTARTING' };
+let simulationState = STATE.RUNNING;
+
+let vehicles = [];          // active vehicles
+let particles = [];         // explosion particles
+let boomTimer = 0;          // timer for "BOOM" text scaling
+let restartTimer = 0;       // delay before a new round starts
+
+/* --------------------------------------------------------------
+   Helper functions
+   -------------------------------------------------------------- */
+function rand(min, max) { return Math.random() * (max - min) + min; }
+function distance(ax, ay, bx, by) {
+    const dx = ax - bx, dy = ay - by;
+    return Math.hypot(dx, dy);
+}
+
+/* --------------------------------------------------------------
+   Vehicle class
+   -------------------------------------------------------------- */
+class Vehicle {
+    constructor() {
+        // random start inside the canvas
+        this.x = rand(0, canvas.width);
+        this.y = rand(0, canvas.height);
+        // random velocity – keep it moderate
+        const speed = rand(40, 120);               // pixels per second
+        const angle = rand(0, Math.PI * 2);
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+
+        this.radius = 15;               // used for collision detection
+        this.color = `hsl(${rand(0,360)},80%,60%)`;
+        this.isActive = true;
+    }
+
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.wrap();
+    }
+
+    wrap() {
+        if (this.x < -this.radius) this.x = canvas.width + this.radius;
+        else if (this.x > canvas.width + this.radius) this.x = -this.radius;
+        if (this.y < -this.radius) this.y = canvas.height + this.radius;
+        else if (this.y > canvas.height + this.radius) this.y = -this.radius;
+    }
+
+    draw(ctx) {
+        // simple car: a rectangle body + two wheels
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(Math.atan2(this.vy, this.vx)); // face the direction of travel
+
+        // body
+        ctx.fillStyle = this.color;
+        ctx.fillRect(-20, -10, 40, 20);
+
+        // wheels
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.arc(-12, -12, 5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc( 12, -12, 5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(-12,  12, 5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc( 12,  12, 5, 0, Math.PI*2); ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+/* --------------------------------------------------------------
+   Explosion particle class
+   -------------------------------------------------------------- */
+class ExplosionParticle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        const speed = rand(80, 200);
+        const angle = rand(0, Math.PI * 2);
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.life = this.maxLife = rand(0.8, 1.6); // seconds
+        this.size = rand(2, 5);
+        this.color = `hsl(${rand(0,360)},90%,70%)`;
+    }
+
+    update(dt) {
+        // simple gravity for a nicer look
+        const gravity = 200; // px/s²
+        this.vy += gravity * dt;
+
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.life -= dt;
+    }
+
+    draw(ctx) {
+        const alpha = Math.max(this.life / this.maxLife, 0);
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+
+    get isAlive() { return this.life > 0; }
+}
+
+/* --------------------------------------------------------------
+   Simulation setup / restart
+   -------------------------------------------------------------- */
+function initVehicles(count = 7) {
+    vehicles = [];
+    for (let i = 0; i < count; i++) vehicles.push(new Vehicle());
+}
+
+/* --------------------------------------------------------------
+   Collision handling
+   -------------------------------------------------------------- */
+function checkCollisions() {
+    for (let i = 0; i < vehicles.length; i++) {
+        const a = vehicles[i];
+        if (!a.isActive) continue;
+        for (let j = i + 1; j < vehicles.length; j++) {
+            const b = vehicles[j];
+            if (!b.isActive) continue;
+            if (distance(a.x, a.y, b.x, b.y) < a.radius + b.radius) {
+                // collision!
+                a.isActive = false;
+                b.isActive = false;
+                const cx = (a.x + b.x) / 2;
+                const cy = (a.y + b.y) / 2;
+                startExplosion(cx, cy);
+                return; // only handle the first collision per frame
+            }
+        }
+    }
+}
+
+/* --------------------------------------------------------------
+   Explosion start
+   -------------------------------------------------------------- */
+function startExplosion(x, y) {
+    simulationState = STATE.EXPLODING;
+    particles = [];
+    const count = 25;
+    for (let i = 0; i < count; i++) particles.push(new ExplosionParticle(x, y));
+    boomTimer = 0; // reset the "BOOM" animation
+}
+
+/* --------------------------------------------------------------
+   Main loop (requestAnimationFrame)
+   -------------------------------------------------------------- */
+let lastTimestamp = 0;
+function loop(timestamp) {
+    const dt = (timestamp - lastTimestamp) / 1000; // seconds
+    lastTimestamp = timestamp;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    switch (simulationState) {
+        case STATE.RUNNING:
+            // update & draw vehicles
+            vehicles.forEach(v => {
+                if (v.isActive) v.update(dt);
+                v.draw(ctx);
+            });
+            checkCollisions();
+            break;
+
+        case STATE.EXPLODING:
+            // update particles
+            particles.forEach(p => p.update(dt));
+            particles = particles.filter(p => p.isAlive);
+            particles.forEach(p => p.draw(ctx));
+
+            // simple "BOOM" text that expands and fades
+            boomTimer += dt;
+            const boomScale = Math.min(boomTimer * 2, 1.5);
+            const boomAlpha = Math.max(1 - boomTimer, 0);
+            ctx.save();
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.scale(boomScale, boomScale);
+            ctx.fillStyle = `rgba(255,200,0,${boomAlpha})`;
+            ctx.font = 'bold 48px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('BOOM', 0, 16);
+            ctx.restore();
+
+            // when all particles are gone, go to RESTARTING
+            if (particles.length === 0 && boomAlpha <= 0) {
+                simulationState = STATE.RESTARTING;
+                restartTimer = 0;
+            }
+            break;
+
+        case STATE.RESTARTING:
+            restartTimer += dt;
+            // small pause (1.5 s) before new round
+            if (restartTimer > 1.5) {
+                initVehicles();
+                simulationState = STATE.RUNNING;
+            }
+            break;
+    }
+
+    requestAnimationFrame(loop);
+}
+
+/* --------------------------------------------------------------
+   Kick‑off
+   -------------------------------------------------------------- */
+initVehicles();               // first batch of vehicles
+requestAnimationFrame(ts => {
+    lastTimestamp = ts;
+    requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>
