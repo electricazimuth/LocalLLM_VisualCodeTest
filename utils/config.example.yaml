@@ -1,0 +1,121 @@
+# config.yaml
+
+paths:
+  # Use absolute paths or standard tilde expansion (~)
+  models: "~/path/to/your/Models"
+  prompts: "~/path/to/your/prompts"
+  results: "~/path/to/your/results"
+
+server:
+  host: "127.0.0.1"
+  port: 5000
+  startup_wait: 420
+  cooldown_wait: 5
+  primary_timeout: 800
+  fallback_timeout: 10
+  max_size_gigs: 71
+  min_size_gigs: 1
+  default_backend: "llamacpp"
+
+# Default Generation Parameters (applied if not overridden)
+default_generation_params:
+  max_tokens: 24576
+  temperature: 0.7
+  top_k: 64
+  top_p: 0.95
+  presence_penalty: 0.0
+  frequency_penalty: 0.0
+  seed: -1
+  stop: []
+
+backends:
+  koboldcpp:
+    bin_path: "~/path/to/your/koboldcpp.py"
+    type: "python" # Indicates we run this via python3
+    # Default startup args for this backend
+    startup_args:
+      - "--usecublas"
+      - "normal"
+      - "--contextsize"
+      - "32768"
+      - "--gpulayers"
+      - "96"
+
+  llamacpp:
+    bin_path: "~/path/to/your/llama-server"
+    type: "binary"
+    startup_args:
+      - "-ngl"
+      - "99"
+      - "--ctx-size"
+      - "32768"
+      - "--parallel" 
+      - "1"
+
+# Model Specific Overrides
+# The script will look for the first 'pattern' that is contained within the model filename
+models:
+  - pattern: "gpt-oss-120b"
+    # Overrides for startup (merged with backend defaults)
+    startup_args:
+      - "--threads"
+      - "-1"
+      - "-ot"
+      - ".ffn_(up|down)_exps.=CPU"
+    generation_params: {} # Uses defaults
+
+  - pattern: "qwq"
+    startup_args:
+      - "--samplers"
+      - "top_k;top_p;min_p;temperature;dry;typ_p;xtc"
+    generation_params:
+      temperature: 0.6
+      top_k: 40
+      top_p: 0.95
+      min_p: 0.1
+      repeat_penalty: 1.1
+      dry_multiplier: 0.5
+    prompt_template:
+      system_prompt: "" # QwQ usually raw, or add system prompt here if needed
+      append_text: "\nThink step by step but only keep a minimum draft..."
+
+  - pattern: "GLM-4.7-Flash"
+    startup_args:
+      - "--jinja"
+      - "--repeat-penalty"
+      - "1.0"
+    generation_params:
+      temperature: 0.7
+      top_p: 1.0
+      min_p: 0.01
+
+  - pattern: "Olmo-3.1"
+    startup_args:
+      - "--jinja"
+    generation_params:
+      temperature: 0.6
+      top_k: 50
+      top_p: 0.95
+  
+  - pattern: "Nemotron-3-Nano-30B"
+    startup_args:
+      - "--jinja"
+    generation_params:
+      temperature: 0.6
+      top_p: 0.95
+
+  - pattern: "glm-4.5-air"
+    startup_args:
+      - "--jinja"
+      - "--flash-attn"
+      - "--tensor-split"
+      - "2,1"
+      - "--parallel"
+      - "1"
+      - "--threads"
+      - "16"
+    generation_params:
+      temperature: 0.6
+      top_k: 20
+      top_p: 0.95
+      min_p: 0.01
