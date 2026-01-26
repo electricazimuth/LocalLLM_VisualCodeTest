@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls in a Spinning Heptagon</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #f0f0f0; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            border: 1px solid #333; 
+            background-color: #fff; 
+            display: block; 
+            margin: 20px auto; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+            color: #333;
+        }
+        .instructions {
+            max-width: 500px;
+            text-align: center;
+            margin: 10px 20px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="title">Bouncing Balls in a Spinning Heptagon</div>
+    <div class="instructions">20 balls with physics simulation inside a rotating heptagon container</div>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
+    <section id="notes">
+        <p>Physics features implemented:</p>
+        <ul>
+            <li>Gravity affects all balls</li>
+            <li>Wall collisions with damping</li>
+            <li>Ball-to-ball collision detection and response</li>
+            <li>Rotation of heptagon container (360° per 5 seconds)</li>
+            <li>Balls rotate based on velocity</li>
+            <li>Performance optimized with spatial partitioning</li>
+        </ul>
+    </section>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        
+        // Physics constants
+        const GRAVITY = 0.2;
+        const DAMPING = 0.85;
+        const FRICTION = 0.99;
+        const ROTATION_SPEED = (2 * Math.PI) / 5; // 360 degrees in 5 seconds
+        
+        // Heptagon properties
+        const HEPTAGON_RADIUS = 200;
+        const HEPTAGON_CENTER = { x: W/2, y: H/2 };
+        
+        // Ball colors
+        const BALL_COLORS = [
+            '#f8b862', '#f6ad49', '#f39800', '#f08300', '#ec6d51', 
+            '#ee7948', '#ed6d3d', '#ec6800', '#ec6800', '#ee7800', 
+            '#eb6238', '#ea5506', '#ea5506', '#eb6101', '#e49e61', 
+            '#e45e32', '#e17b34', '#dd7a56', '#db8449', '#d66a35'
+        ];
+        
+        // Ball class
+        class Ball {
+            constructor(id, x, y) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = (Math.random() - 0.5) * 4;
+                this.radius = 15;
+                this.mass = this.radius * this.radius * 0.1;
+                this.color = BALL_COLORS[id - 1];
+                this.rotation = 0;
+                this.rotationSpeed = 0;
+                this.spin = 0;
+            }
+            
+            update() {
+                // Apply gravity
+                this.vy += GRAVITY;
+                
+                // Apply friction
+                this.vx *= FRICTION;
+                this.vy *= FRICTION;
+                
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Update rotation based on velocity
+                this.rotationSpeed = (this.vx * 0.05) - (this.vy * 0.02);
+                this.rotation += this.rotationSpeed;
+                this.spin = Math.floor(Math.abs(this.rotation) * 5) % 10;
+            }
+            
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                
+                // Draw ball
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                // Draw border
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // Draw number
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.id.toString(), 0, 0);
+                
+                ctx.restore();
+            }
+        }
+        
+        // Heptagon class
+        class Heptagon {
+            constructor() {
+                this.center = HEPTAGON_CENTER;
+                this.radius = HEPTAGON_RADIUS;
+                this.rotation = 0;
+                this.vertices = [];
+                this.updateVertices();
+            }
+            
+            updateVertices() {
+                this.vertices = [];
+                for (let i = 0; i < 7; i++) {
+                    const angle = (i * 2 * Math.PI / 7) + this.rotation;
+                    this.vertices.push({
+                        x: this.center.x + this.radius * Math.cos(angle),
+                        y: this.center.y + this.radius * Math.sin(angle)
+                    });
+                }
+            }
+            
+            update() {
+                this.rotation += ROTATION_SPEED * 0.016; // Assuming 60fps
+                this.updateVertices();
+            }
+            
+            draw() {
+                ctx.beginPath();
+                ctx.moveTo(this.vertices[0].x, this.vertices[0].y);
+                for (let i = 1; i < 7; i++) {
+                    ctx.lineTo(this.vertices[i].x, this.vertices[i].y);
+                }
+                ctx.closePath();
+                
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Fill with semi-transparent color
+                ctx.fillStyle = 'rgba(200, 200, 255, 0.1)';
+                ctx.fill();
+            }
+        }
+        
+        // Create balls
+        const balls = [];
+        for (let i = 1; i <= 20; i++) {
+            // Start each ball at the center with slight offset
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * 20;
+            const x = HEPTAGON_CENTER.x + Math.cos(angle) * distance;
+            const y = HEPTAGON_CENTER.y + Math.sin(angle) * distance;
+            
+            balls.push(new Ball(i, x, y));
+        }
+        
+        // Create heptagon
+        const heptagon = new Heptagon();
+        
+        // Spatial partitioning for collision detection
+        const GRID_SIZE = 30;
+        let grid = [];
+        
+        function initializeGrid() {
+            const cols = Math.ceil(W / GRID_SIZE);
+            const rows = Math.ceil(H / GRID_SIZE);
+            grid = new Array(cols);
+            for (let i = 0; i < cols; i++) {
+                grid[i] = new Array(rows).fill(null).map(() => []);
+            }
+        }
+        
+        function updateGrid() {
+            // Clear grid
+            for (let i = 0; i < grid.length; i++) {
+                for (let j = 0; j < grid[i].length; j++) {
+                    grid[i][j].length = 0;
+                }
+            }
+            
+            // Place balls in grid
+            for (const ball of balls) {
+                const col = Math.floor(ball.x / GRID_SIZE);
+                const row = Math.floor(ball.y / GRID_SIZE);
+                
+                if (col >= 0 && col < grid.length && row >= 0 && row < grid[0].length) {
+                    grid[col][row].push(ball);
+                }
+            }
+        }
+        
+        // Check collision with heptagon walls
+        function checkHeptagonCollision(ball) {
+            // Check distance from center
+            const dx = ball.x - HEPTAGON_CENTER.x;
+            const dy = ball.y - HEPTAGON_CENTER.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // If ball is outside heptagon, push it back
+            if (distance + ball.radius > HEPTAGON_RADIUS) {
+                // Calculate normal vector from center to ball
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Move ball back inside
+                ball.x = HEPTAGON_CENTER.x + nx * (HEPTAGON_RADIUS - ball.radius);
+                ball.y = HEPTAGON_CENTER.y + ny * (HEPTAGON_RADIUS - ball.radius);
+                
+                // Reflect velocity with damping
+                const dot = ball.vx * nx + ball.vy * ny;
+                ball.vx = (ball.vx - 2 * dot * nx) * DAMPING;
+                ball.vy = (ball.vy - 2 * dot * ny) * DAMPING;
+                
+                // Correct position to avoid sticking
+                ball.x = Math.max(ball.radius, Math.min(W - ball.radius, ball.x));
+                ball.y = Math.max(ball.radius, Math.min(H - ball.radius, ball.y));
+                
+                return true;
+            }
+            
+            return false;
+        }
+        
+        // Check collision between two balls
+        function checkBallCollision(ball1, ball2) {
+            const dx = ball2.x - ball1.x;
+            const dy = ball2.y - ball1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Check if balls are colliding
+            if (distance < ball1.radius + ball2.radius) {
+                // Normalize collision vector
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Relative velocity
+                const dvx = ball2.vx - ball1.vx;
+                const dvy = ball2.vy - ball1.vy;
+                
+                // Velocity along normal
+                const velocityAlongNormal = dvx * nx + dvy * ny;
+                
+                // Only collide if moving toward each other
+                if (velocityAlongNormal > 0) return;
+                
+                // Calculate impulse scalar
+                const impulse = 2 * velocityAlongNormal / (ball1.mass + ball2.mass);
+                
+                // Apply impulse
+                ball1.vx += impulse * ball2.mass * nx;
+                ball1.vy += impulse * ball2.mass * ny;
+                ball2.vx -= impulse * ball1.mass * nx;
+                ball2.vy -= impulse * ball1.mass * ny;
+                
+                // Position correction to prevent sticking
+                const percent = 0.2;
+                const slop = 0.01;
+                const correction = Math.max(0, (ball1.radius + ball2.radius - distance) / distance) * percent;
+                
+                ball1.x -= correction * nx * ball2.mass / (ball1.mass + ball2.mass);
+                ball1.y -= correction * ny * ball2.mass / (ball1.mass + ball2.mass);
+                ball2.x += correction * nx * ball1.mass / (ball1.mass + ball2.mass);
+                ball2.y += correction * ny * ball1.mass / (ball1.mass + ball2.mass);
+                
+                return true;
+            }
+            return false;
+        }
+        
+        // Handle collisions
+        function handleCollisions() {
+            // Update grid
+            updateGrid();
+            
+            // Check collisions
+            for (let i = 0; i < balls.length; i++) {
+                const ball = balls[i];
+                
+                // Check wall collisions
+                checkHeptagonCollision(ball);
+                
+                // Check ball-to-ball collisions using spatial partitioning
+                const col = Math.floor(ball.x / GRID_SIZE);
+                const row = Math.floor(ball.y / GRID_SIZE);
+                
+                // Check neighboring cells
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        const newCol = col + dx;
+                        const newRow = row + dy;
+                        
+                        if (newCol >= 0 && newCol < grid.length && 
+                            newRow >= 0 && newRow < grid[0].length) {
+                            
+                            for (const otherBall of grid[newCol][newRow]) {
+                                if (otherBall !== ball && checkBallCollision(ball, otherBall)) {
+                                    // Collision handled
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        function gameLoop(timestamp) {
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+            
+            // Update heptagon
+            heptagon.update();
+            
+            // Update balls
+            for (const ball of balls) {
+                ball.update();
+            }
+            
+            // Handle collisions
+            handleCollisions();
+            
+            // Draw heptagon
+            heptagon.draw();
+            
+            // Draw balls
+            for (const ball of balls) {
+                ball.draw();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Initialize grid and start the game
+        initializeGrid();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

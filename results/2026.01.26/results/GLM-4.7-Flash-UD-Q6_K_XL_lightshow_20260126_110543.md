@@ -1,0 +1,329 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Psychedelic Metaballs - Ray Marching</title>
+    <style>
+        /* CSS Reset & Basic Styling */
+        body {
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            background-color: #000; /* Deep black background */
+            font-family: 'Courier New', Courier, monospace; /* Retro terminal feel */
+        }
+        
+        canvas {
+            display: block; /* Remove default inline spacing */
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Optional overlay for a retro CRT scanline effect */
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.1) 50%,
+                rgba(0,0,0,0.1)
+            );
+            background-size: 100% 4px;
+            pointer-events: none; /* Let clicks pass through */
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="scanlines"></div>
+    <canvas id="glCanvas"></canvas>
+
+    <!-- Vertex Shader: Simple pass-through for a full-screen quad -->
+    <script id="vs" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        void main() {
+            // Map -1.0 to 1.0 to clip space coordinates
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+
+    <!-- Fragment Shader: The Psychedelic Magic -->
+    <script id="fs" type="x-shader/x-fragment">
+        precision highp float;
+
+        uniform vec2 u_resolution;
+        uniform float u_time;
+
+        // --- Configuration ---
+        const int MAX_STEPS = 64;
+        const float MAX_DIST = 100.0;
+        const float SURF_DIST = 0.001;
+
+        // 1. Smooth Minimum Function (The core of metaballs)
+        // This function blends two distances 'a' and 'b' smoothly.
+        // 'k' is the smoothness factor (higher = smoother transition).
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+
+        // 2. Sphere SDF (Signed Distance Function)
+        // Returns the distance from point p to the surface of a sphere at center c with radius r.
+        float sdSphere(vec3 p, vec3 c, float r) {
+            return length(p - c) - r;
+        }
+
+        // 3. Scene Map Function
+        // Defines the entire world geometry.
+        float map(vec3 p) {
+            float d = MAX_DIST;
+
+            // We create 5 metaballs that move in complex, organic patterns.
+            // We use sin/cos waves driven by 'u_time' to create the animation.
+            
+            // Blob 1: The main leader
+            vec3 pos1 = vec3(sin(u_time * 0.7) * 4.0, cos(u_time * 0.3) * 2.0, sin(u_time * 0.5) * 2.0);
+            d = smin(d, sdSphere(p, pos1, 2.5), 2.5);
+
+            // Blob 2: The follower
+            vec3 pos2 = vec3(cos(u_time * 0.5) * 4.0, sin(u_time * 1.1) * 3.0, cos(u_time * 0.9) * 1.0);
+            d = smin(d, sdSphere(p, pos2, 2.0), 2.0);
+
+            // Blob 3: The background orb
+            vec3 pos3 = vec3(sin(u_time * 0.2) * 6.0, 0.0, cos(u_time * 0.4) * 6.0);
+            d = smin(d, sdSphere(p, pos3, 3.5), 3.0);
+
+            // Blob 4: The erratic one
+            vec3 pos4 = vec3(cos(u_time * 1.3) * 2.0, sin(u_time * 0.9) * 4.0, sin(u_time * 0.2) * 2.0);
+            d = smin(d, sdSphere(p, pos4, 1.5), 1.5);
+
+            // Blob 5: Small particle
+            vec3 pos5 = vec3(sin(u_time * 0.4 + 1.0) * 5.0, cos(u_time * 0.6 + 1.0) * 5.0, sin(u_time * 0.8 + 1.0) * 2.0);
+            d = smin(d, sdSphere(p, pos5, 1.0), 1.0);
+
+            return d;
+        }
+
+        // 4. Calculate Surface Normal
+        // Approximates the gradient of the distance field at point p.
+        vec3 getNormal(vec3 p) {
+            float d = map(p);
+            vec2 e = vec2(0.001, 0.0);
+            vec3 n = d - vec3(
+                map(p - e.xyy),
+                map(p - e.yxy),
+                map(p - e.yyx)
+            );
+            return normalize(n);
+        }
+
+        // 5. Main Ray Marching Loop
+        void main() {
+            // Normalize coordinates to -1.0 to 1.0, correct for aspect ratio
+            vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
+            
+            // Camera setup
+            vec3 ro = vec3(0.0, 0.0, -10.0); // Ray Origin (Camera Position)
+            vec3 rd = normalize(vec3(uv, 1.0)); // Ray Direction
+
+            float d = 0.0; // Current distance
+            float t = 0.0; // Total distance traveled
+            
+            // Ray Marching Loop
+            for(int i = 0; i < MAX_STEPS; i++) {
+                vec3 p = ro + rd * t; // Current ray position
+                d = map(p); // Distance to nearest surface
+                t += d; // Step forward
+                
+                // If we hit something close enough, break loop
+                if(d < SURF_DIST || t > MAX_DIST) break;
+            }
+
+            // --- Coloring & Shading ---
+            vec3 col = vec3(0.0); // Default background (black)
+
+            if(t < MAX_DIST) {
+                vec3 p = ro + rd * t; // Hit point
+                vec3 n = getNormal(p); // Normal at hit point
+
+                // --- Psychedelic Palette Generation ---
+                // We mix colors based on position and time to create shifting hues
+                float hue = (u_time * 0.1 + p.x * 0.2 + p.y * 0.2) * 6.283;
+                
+                // Convert Hue to RGB (Simple approximation)
+                vec3 c1 = vec3(0.5 + 0.5 * cos(hue + vec3(0.0, 2.0, 4.0)));
+                vec3 c2 = vec3(0.5 + 0.5 * cos(hue + vec3(2.0, 4.0, 6.0)) * 0.5);
+                
+                // Base color
+                vec3 objColor = mix(c1, c2, 0.5);
+
+                // --- Lighting ---
+                // Light direction (diagonal)
+                vec3 lightDir = normalize(vec3(5.0, 5.0, -5.0));
+                
+                // Ambient term
+                float ambient = 0.2;
+                
+                // Diffuse term (Lambertian)
+                float diff = max(dot(n, lightDir), 0.0);
+                
+                // Rim Light (Fresnel effect) - makes edges glow
+                vec3 viewDir = normalize(ro - p);
+                float fresnel = pow(1.0 - max(dot(viewDir, n), 0.0), 3.0);
+
+                // Combine lighting
+                col = objColor * (ambient + diff) + vec3(1.0, 0.8, 0.5) * fresnel;
+                
+                // Add a "scanline" style highlight on the surface
+                col += vec3(0.1) * sin(p.y * 100.0 + u_time * 5.0);
+            } else {
+                // Background gradient (Deep space void)
+                col = vec3(0.02, 0.02, 0.05) + 0.02 * uv.x * uv.y;
+            }
+
+            // Gamma correction for vibrant look
+            col = pow(col, vec3(0.4545));
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+
+    <script>
+        // --- WebGL Initialization & Logic ---
+
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl2'); // Using WebGL 2 for better float precision and array uniform support
+
+        if (!gl) {
+            // Fallback to WebGL 1 if WebGL 2 is not supported
+            const canvasOld = document.getElementById('glCanvas');
+            const glOld = canvasOld.getContext('webgl') || canvasOld.getContext('experimental-webgl');
+            if (!glOld) {
+                alert("WebGL is not supported in your browser. Please try a modern browser.");
+                throw new Error("WebGL not supported");
+            }
+            // If WebGL 1 fallback was successful, reassign variables (simplified for this snippet)
+            // For this specific single-file robust solution, we throw if WebGL 2 fails, 
+            // but in production, one would handle the context switching logic here.
+            throw new Error("WebGL 2 is required for this psychedelic experience.");
+        }
+
+        // 1. Compile Shaders
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        const vsSource = document.getElementById('vs').text;
+        const fsSource = document.getElementById('fs').text;
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error('Program link error:', gl.getProgramInfoLog(program));
+        }
+
+        // 2. Setup Full-Screen Quad (Buffer)
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        // Two triangles making a square covering -1 to 1
+        const positions = [
+            -1.0, -1.0,
+             1.0, -1.0,
+            -1.0,  1.0,
+            -1.0,  1.0,
+             1.0, -1.0,
+             1.0,  1.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        const positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+        gl.enableVertexAttribArray(positionAttributeLocation);
+        gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // 3. Get Uniform Locations
+        const uResolutionLoc = gl.getUniformLocation(program, "u_resolution");
+        const uTimeLoc = gl.getUniformLocation(program, "u_time");
+
+        // 4. Resize Handling
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // 5. Animation Loop
+        let startTime = null;
+
+        function render(now) {
+            if (!startTime) startTime = now;
+            const elapsed = (now - startTime) * 0.001; // Convert to seconds
+
+            // Clear screen
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Use program
+            gl.useProgram(program);
+
+            // Update Uniforms
+            gl.uniform2f(uResolutionLoc, canvas.width, canvas.height);
+            gl.uniform1f(uTimeLoc, elapsed);
+
+            // Draw
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            requestAnimationFrame(render);
+        }
+
+        requestAnimationFrame(render);
+
+        // --- Implementation Notes ---
+        /*
+        *   Technique: Ray Marching
+        *   The pixel shader casts a ray into a virtual 3D space. At each step, it asks the SDF (map function) 
+        *   "How far is the nearest surface?" It moves the ray forward by that distance. 
+        *   If the distance becomes very small, we have hit a surface.
+        *   
+        *   Metaballs: 
+        *   Instead of solid objects, we define "blobs" as negative distances (or simply spheres).
+        *   The "Smooth Minimum" function blends these distances together. 
+        *   Where the distances overlap, the negative values cancel out, creating a "liquid" merger effect.
+        *   
+        *   Psychedelic Coloring:
+        *   We calculate the normal at the surface. 
+        *   We then mix colors based on the 3D position and time (sine waves). 
+        *   A "Fresnel" term (rim lighting) is added to give the blobs a glowing edge, enhancing the volumetric feel.
+        */
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: GLM-4.7-Flash-UD-Q6_K_XL.gguf -->
+<!-- Prompt: lightshow.md -->
+<!-- Time: 71.52s -->
+<!-- Fallback: False -->

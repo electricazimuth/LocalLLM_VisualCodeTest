@@ -1,0 +1,422 @@
+Here is the complete, single-file solution for the Happy Mrs. Chicken Simulation.
+
+I have implemented a robust **Class-based architecture** for both the `Chicken` and `Egg` entities. I included a **State Machine** for the chicken to manage the `wandering` vs `laying` states. The rendering uses the Canvas API with `requestAnimationFrame` and delta time for frame-rate-independence.
+
+I also added a small control panel (as per the system prompt's requirement for interactive elements) to Pause/Resume the simulation and clear the eggs.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Happy Mrs. Chicken Simulation</title>
+    <style>
+        body { 
+            margin: 10px; 
+            overflow: hidden; 
+            background-color: #f0f0f0; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        /* Canvas Container */
+        .canvas-container {
+            position: relative;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas { 
+            display: block; 
+            background-color: #88c999; /* Spring Green */
+        }
+
+        /* UI Controls */
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        button {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            background-color: #ff9800;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        button:hover { background-color: #f57c00; }
+        button:active { transform: translateY(1px); }
+
+        .status {
+            font-size: 14px;
+            color: #555;
+            font-weight: bold;
+        }
+
+        /* Notes Section */
+        #notes {
+            margin-top: 20px;
+            padding: 15px;
+            max-width: 512px;
+            background: #fff;
+            border-left: 4px solid #ff9800;
+            font-size: 13px;
+            color: #444;
+            line-height: 1.5;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="canvas-container">
+        <canvas id="simulationCanvas" width="512" height="512"></canvas>
+    </div>
+
+    <div class="controls">
+        <button id="btnPause">Pause</button>
+        <button id="btnReset">Reset Eggs</button>
+        <div class="status" id="statusText">Status: Wandering...</div>
+    </div>
+
+    <section id="notes">
+        <strong>Implementation Notes:</strong><br>
+        1. <strong>Architecture:</strong> Used ES6 Classes for clean state management. <code>Chicken</code> handles physics and AI, while <code>Egg</code> handles lifespan and rendering.<br>
+        2. <strong>AI Behavior:</strong> The chicken uses a "change direction" probability check. It detects boundaries and bounces off them. It periodically switches to 'laying' state where it stops moving, creates an egg, and waits before resuming.<br>
+        3. <strong>Delta Time:</strong> Movement calculations use `dt` (delta time) to ensure the chicken doesn't speed up on 144Hz monitors compared to 60Hz monitors.<br>
+        4. <strong>Visuals:</strong> The chicken rotates to face its movement direction. When laying, it turns a reddish color and "sits" down (y-offset increases) to simulate the action.
+    </section>
+
+    <script>
+        // --- Configuration & Constants ---
+        const CONFIG = {
+            chickenSpeed: 100,        // Pixels per second
+            wanderChangeRate: 0.02,   // Chance per frame to change direction
+            layChance: 0.0008,        // Probability per frame of deciding to lay an egg
+            layDuration: 1.5,         // Seconds to stay in laying state
+            eggLifeSpan: 10,          // Seconds before an egg disappears
+            colors: {
+                chickenBody: '#FFD700', // Gold/Yellow
+                chickenRed: '#D32F2F',  // Red (comb/laying)
+                beak: '#FFA500',
+                eye: '#000',
+                egg: '#FFFFFF'
+            }
+        };
+
+        // --- Classes ---
+
+        /**
+         * Represents an Egg laid by the chicken.
+         */
+        class Egg {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.age = 0;
+                this.radius = 8;
+            }
+
+            update(dt) {
+                this.age += dt;
+            }
+
+            isExpired() {
+                return this.age > CONFIG.eggLifeSpan;
+            }
+
+            draw(ctx) {
+                const opacity = 1 - (this.age / CONFIG.eggLifeSpan); // Fade out
+                
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.globalAlpha = Math.max(0, opacity);
+                
+                // Draw Egg Body (Oval)
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.radius, this.radius * 1.4, 0, 0, Math.PI * 2);
+                ctx.fillStyle = CONFIG.colors.egg;
+                ctx.fill();
+                ctx.strokeStyle = '#ddd';
+                ctx.stroke();
+
+                // Draw Shine
+                ctx.beginPath();
+                ctx.ellipse(-2, -3, 2, 4, -0.5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        /**
+         * Represents the Chicken character.
+         */
+        class Chicken {
+            constructor(canvasWidth, canvasHeight) {
+                // Physical properties
+                this.x = canvasWidth / 2;
+                this.y = canvasHeight / 2;
+                this.radius = 20; // Hitbox radius
+                
+                // Movement properties
+                this.angle = Math.random() * Math.PI * 2; // Facing direction
+                this.velocity = { x: 0, y: 0 };
+                
+                // State Machine
+                this.state = 'wandering'; // 'wandering' or 'laying'
+                this.layTimer = 0;
+                this.wanderTimer = 0;
+
+                // Visual offsets
+                this.headOffset = { x: 0, y: -this.radius + 5 };
+                this.squatOffset = 0; // For animation when laying
+            }
+
+            update(dt, width, height, eggs) {
+                // 1. State Logic
+                if (this.state === 'wandering') {
+                    this.handleWandering(dt);
+                    // Check if it's time to lay
+                    if (Math.random() < CONFIG.layChance) {
+                        this.state = 'laying';
+                        this.layTimer = CONFIG.layDuration;
+                        // Create the egg
+                        eggs.push(new Egg(this.x, this.y));
+                    }
+                } else if (this.state === 'laying') {
+                    this.handleLaying(dt);
+                }
+
+                // 2. Physics & Boundaries
+                // Apply Squat animation (spring effect for smoothness)
+                const targetSquat = this.state === 'laying' ? 8 : 0;
+                this.squatOffset = this.squatOffset + (targetSquat - this.squatOffset) * 5 * dt;
+
+                // Move
+                const moveDist = CONFIG.chickenSpeed * dt;
+                this.x += Math.cos(this.angle) * moveDist;
+                this.y += Math.sin(this.angle) * moveDist;
+
+                // Boundary Handling: Bounce
+                if (this.x < this.radius) {
+                    this.x = this.radius;
+                    this.angle = Math.PI - this.angle; // Reflect angle
+                } else if (this.x > width - this.radius) {
+                    this.x = width - this.radius;
+                    this.angle = Math.PI - this.angle;
+                }
+
+                if (this.y < this.radius) {
+                    this.y = this.radius;
+                    this.angle = -this.angle;
+                } else if (this.y > height - this.radius) {
+                    this.y = height - this.radius;
+                    this.angle = -this.angle;
+                }
+            }
+
+            handleWandering(dt) {
+                // Occasionally change direction randomly
+                if (Math.random() < CONFIG.wanderChangeRate) {
+                    // Change angle slightly to create a curve, or fully random
+                    this.angle += (Math.random() - 0.5) * 1.5; 
+                }
+            }
+
+            handleLaying(dt) {
+                this.layTimer -= dt;
+                if (this.layTimer <= 0) {
+                    this.state = 'wandering';
+                }
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Determine color based on state
+                const bodyColor = this.state === 'laying' ? '#FFC107' : CONFIG.colors.chickenBody;
+                const combColor = this.state === 'laying' ? '#F44336' : CONFIG.colors.chickenRed;
+
+                ctx.rotate(this.angle);
+
+                // Apply squat offset (move down)
+                ctx.translate(0, this.squatOffset);
+
+                // --- Draw Legs ---
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                // Back leg
+                ctx.moveTo(-10, this.radius - 5); 
+                ctx.lineTo(-10 - 5, this.radius + 10);
+                // Front leg
+                ctx.moveTo(10, this.radius - 5);
+                ctx.lineTo(10 + 5, this.radius + 10);
+                ctx.stroke();
+
+                // --- Draw Body ---
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = bodyColor;
+                ctx.fill();
+                ctx.strokeStyle = '#E6B800';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // --- Draw Head ---
+                // Head is slightly offset from body center
+                ctx.beginPath();
+                ctx.arc(this.headOffset.x, this.headOffset.y, this.radius * 0.6, 0, Math.PI * 2);
+                ctx.fillStyle = bodyColor;
+                ctx.fill();
+                ctx.stroke();
+
+                // --- Draw Comb (Red part on top) ---
+                ctx.fillStyle = combColor;
+                ctx.beginPath();
+                ctx.arc(this.headOffset.x - 5, this.headOffset.y - this.radius * 0.6, 6, 0, Math.PI * 2);
+                ctx.arc(this.headOffset.x + 8, this.headOffset.y - this.radius * 0.6, 5, 0, Math.PI * 2);
+                ctx.arc(this.headOffset.x + 2, this.headOffset.y - this.radius * 0.8, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // --- Draw Eye ---
+                ctx.fillStyle = CONFIG.colors.eye;
+                ctx.beginPath();
+                ctx.arc(this.headOffset.x + 8, this.headOffset.y - 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // --- Draw Beak ---
+                ctx.fillStyle = CONFIG.colors.beak;
+                ctx.beginPath();
+                ctx.moveTo(this.headOffset.x + 12, 0);
+                ctx.lineTo(this.headOffset.x + 20, 3);
+                ctx.lineTo(this.headOffset.x + 12, 6);
+                ctx.closePath();
+                ctx.fill();
+
+                // --- Draw Tail ---
+                ctx.beginPath();
+                ctx.moveTo(-this.radius, 0);
+                ctx.lineTo(-this.radius - 15, -10);
+                ctx.lineTo(-this.radius - 15, 10);
+                ctx.closePath();
+                ctx.fillStyle = bodyColor;
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        // --- Main Simulation ---
+
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusText = document.getElementById('statusText');
+        
+        // Game State
+        let eggs = [];
+        let chicken;
+        let isPaused = false;
+        let lastTime = 0;
+
+        // UI Elements
+        const btnPause = document.getElementById('btnPause');
+        const btnReset = document.getElementById('btnReset');
+
+        function init() {
+            chicken = new Chicken(canvas.width, canvas.height);
+            eggs = [];
+            isPaused = false;
+            lastTime = performance.now();
+            updateUI();
+        }
+
+        function loop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const dt = (timestamp - lastTime) / 1000; // Delta time in seconds
+            lastTime = timestamp;
+
+            if (!isPaused) {
+                update(dt);
+            }
+            draw();
+
+            requestAnimationFrame(loop);
+        }
+
+        function update(dt) {
+            // Update Chicken
+            chicken.update(dt, canvas.width, canvas.height, eggs);
+
+            // Update Eggs (and remove expired ones)
+            for (let i = eggs.length - 1; i >= 0; i--) {
+                eggs[i].update(dt);
+                if (eggs[i].isExpired()) {
+                    eggs.splice(i, 1);
+                }
+            }
+
+            updateUI();
+        }
+
+        function draw() {
+            // Clear Screen
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Eggs (drawn first so they are under the chicken)
+            eggs.forEach(egg => egg.draw(ctx));
+
+            // Draw Chicken
+            chicken.draw(ctx);
+        }
+
+        function updateUI() {
+            if (isPaused) {
+                statusText.textContent = "Status: Paused";
+                statusText.style.color = "#666";
+            } else {
+                statusText.textContent = `Status: ${chicken.state} | Eggs on ground: ${eggs.length}`;
+                statusText.style.color = chicken.state === 'laying' ? '#D32F2F' : '#555';
+            }
+        }
+
+        // --- Event Listeners ---
+
+        btnPause.addEventListener('click', () => {
+            isPaused = !isPaused;
+            btnPause.textContent = isPaused ? "Resume" : "Pause";
+        });
+
+        btnReset.addEventListener('click', () => {
+            eggs = [];
+        });
+
+        // Start the simulation
+        init();
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: GLM-4.7-Flash-UD-Q6_K_XL.gguf -->
+<!-- Prompt: chicken.md -->
+<!-- Time: 57.92s -->
+<!-- Fallback: False -->

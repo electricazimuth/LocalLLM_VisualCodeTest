@@ -1,0 +1,320 @@
+Here is the complete, self-contained HTML file. I have consolidated the boilerplate into a single, valid HTML5 document and implemented the simulation using Object-Oriented Programming (OOP) principles, including a `Fish` class that handles physics, rendering, and autonomous behaviors.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Aquarium Simulation</title>
+    <style>
+        /* CSS Reset and Layout */
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f8ff; /* AliceBlue background for the page */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #333;
+        }
+
+        /* Container for the canvas to center it nicely */
+        .canvas-container {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-radius: 8px;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #e0f7fa, #80deea); /* Water gradient */
+        }
+
+        canvas {
+            display: block;
+            background-color: transparent; /* Transparent to let CSS gradient show */
+        }
+
+        /* Notes Section Styling */
+        #notes {
+            margin-top: 20px;
+            max-width: 800px;
+            width: 100%;
+            background-color: #fff;
+            padding: 20px;
+            border-left: 5px solid #00bcd4;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        #notes h2 {
+            margin-top: 0;
+            color: #006064;
+        }
+
+        #notes code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #d63031;
+        }
+
+        #notes ul {
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="canvas-container">
+        <canvas id="simulationCanvas" width="800" height="600"></canvas>
+    </div>
+
+    <section id="notes">
+        <h2>Implementation Notes</h2>
+        <p>This simulation uses a pure JavaScript approach with the <strong>Canvas API</strong> and <strong>Object-Oriented Design</strong>.</p>
+        <ul>
+            <li><strong>Class Structure:</strong> The <code>Fish</code> class encapsulates all state (position, velocity, size) and behavior (update, draw). This adheres to the Single Responsibility Principle.</li>
+            <li><strong>Physics Engine:</strong> Movement is calculated using velocity and acceleration vectors. A "steering" force is applied near boundaries to create smooth turns rather than robotic bouncing.</li>
+            <li><strong>Delta Time:</strong> The <code>update</code> methods multiply movement by <code>deltaTime</code>. This ensures the fish move at the same speed on 60Hz monitors as they do on 144Hz monitors.</li>
+            <li><strong>Rendering:</strong> The fish are drawn using <code>ctx.save()</code> and <code>ctx.restore()</code> to manage coordinate transformations (translation and rotation) independently for each fish.</li>
+        </ul>
+    </section>
+
+    <script>
+        // --- Configuration ---
+        const CONFIG = {
+            fishCount: 15,
+            baseSpeed: 2.0,
+            wanderStrength: 0.1, // How strongly the fish tries to change direction randomly
+            boundaryForce: 0.15, // How strongly the fish turns away from walls
+            boundaryPadding: 50, // Distance from wall to start reacting
+            tailWiggleSpeed: 0.1
+        };
+
+        // --- Utility Functions ---
+        const randomRange = (min, max) => Math.random() * (max - min) + min;
+        
+        const randomColor = () => {
+            const colors = [
+                '#FF6B6B', // Coral Red
+                '#4ECDC4', // Turquoise
+                '#FFE66D', // Yellow
+                '#FF9F43', // Orange
+                '#C7F464', // Lime
+                '#54A0FF'  // Blue
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        };
+
+        // --- The Fish Class ---
+        class Fish {
+            constructor(canvasWidth, canvasHeight) {
+                this.width = canvasWidth;
+                this.height = canvasHeight;
+                
+                // Position initialization (random within bounds)
+                this.x = randomRange(50, this.width - 50);
+                this.y = randomRange(50, this.height - 50);
+                
+                // Velocity initialization (random direction)
+                const angle = randomRange(0, Math.PI * 2);
+                this.vx = Math.cos(angle);
+                this.vy = Math.sin(angle);
+                
+                // Physical properties
+                this.size = randomRange(10, 20); // Radius of the fish body
+                this.color = randomColor();
+                this.speed = CONFIG.baseSpeed * randomRange(0.8, 1.2); // Vary speed slightly
+                
+                // Animation properties
+                this.tailAngle = 0;
+                this.tailWiggleSpeed = randomRange(0.05, 0.15);
+                this.wobbleOffset = randomRange(0, 100); // Randomize wiggle phase
+            }
+
+            // Update physics state
+            update(deltaTime) {
+                // 1. Apply Wandering (Random steering)
+                // Add a small random vector to the velocity
+                this.vx += randomRange(-CONFIG.wanderStrength, CONFIG.wanderStrength);
+                this.vy += randomRange(-CONFIG.wanderStrength, CONFIG.wanderStrength);
+
+                // 2. Normalize Velocity (Maintain speed)
+                // Calculate current speed magnitude
+                const currentSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                
+                // If we are not moving, give a random direction
+                if (currentSpeed === 0) {
+                    this.vx = 1;
+                    this.vy = 0;
+                } else {
+                    // Normalize and re-apply base speed
+                    this.vx = (this.vx / currentSpeed) * this.speed;
+                    this.vy = (this.vy / currentSpeed) * this.speed;
+                }
+
+                // 3. Boundary Interaction (Steering Behavior)
+                // Instead of hard bouncing, steer towards the center if near edge
+                
+                // Left Wall
+                if (this.x < CONFIG.boundaryPadding) {
+                    this.vx += CONFIG.boundaryForce;
+                }
+                // Right Wall
+                if (this.x > this.width - CONFIG.boundaryPadding) {
+                    this.vx -= CONFIG.boundaryForce;
+                }
+                // Top Wall
+                if (this.y < CONFIG.boundaryPadding) {
+                    this.vy += CONFIG.boundaryForce;
+                }
+                // Bottom Wall
+                if (this.y > this.height - CONFIG.boundaryPadding) {
+                    this.vy -= CONFIG.boundaryForce;
+                }
+
+                // 4. Update Position
+                this.x += this.vx * deltaTime * 60; // *60 is a rough scaling factor to make delta feel natural
+                this.y += this.vy * deltaTime * 60;
+
+                // 5. Update Tail Animation
+                // Use a sine wave based on time to simulate swimming
+                this.tailAngle = Math.sin(Date.now() * this.tailWiggleSpeed + this.wobbleOffset) * 0.5;
+            }
+
+            // Render the fish to the canvas
+            draw(ctx) {
+                ctx.save();
+                
+                // Translate context to fish position
+                ctx.translate(this.x, this.y);
+                
+                // Rotate context to face movement direction
+                // Math.atan2(y, x) returns angle in radians
+                const angle = Math.atan2(this.vy, this.vx);
+                ctx.rotate(angle);
+
+                // Draw Tail (Triangle)
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                // Tail coordinates relative to center (0,0)
+                ctx.moveTo(-this.size * 0.8, 0); // Back of body
+                ctx.lineTo(-this.size * 1.8, -this.size * 0.6 + (this.tailAngle * 5)); // Tip of tail (wiggles)
+                ctx.lineTo(-this.size * 1.8, this.size * 0.6 + (this.tailAngle * 5)); 
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw Body (Ellipse)
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size, this.size * 0.6, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw Eye (White circle + Black pupil)
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(this.size * 0.5, -this.size * 0.2, this.size * 0.25, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(this.size * 0.6, -this.size * 0.2, this.size * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw Fin (Simple triangle on top)
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = 0.8; // Slightly transparent fin
+                ctx.beginPath();
+                ctx.moveTo(0, -this.size * 0.4);
+                ctx.lineTo(this.size * 0.4, 0);
+                ctx.lineTo(-this.size * 0.2, 0);
+                ctx.fill();
+                ctx.globalAlpha = 1.0; // Reset alpha
+
+                ctx.restore();
+            }
+        }
+
+        // --- Main Simulation Logic ---
+
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // State management
+        let fishes = [];
+        let lastTime = 0;
+
+        // Initialize the simulation
+        function init() {
+            fishes = [];
+            for (let i = 0; i < CONFIG.fishCount; i++) {
+                fishes.push(new Fish(W, H));
+            }
+        }
+
+        // Main Animation Loop
+        function gameLoop(timestamp) {
+            // Calculate Delta Time (seconds)
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // 1. Clear Canvas
+            // We use clearRect to remove previous frame's drawing
+            ctx.clearRect(0, 0, W, H);
+
+            // 2. Draw Background Elements (Optional: Plants/Rocks)
+            drawEnvironment();
+
+            // 3. Update and Draw Fishes
+            // We iterate backwards or forwards; order doesn't matter much here unless z-index is needed
+            fishes.forEach(fish => {
+                fish.update(deltaTime);
+                fish.draw(ctx);
+            });
+
+            // Request next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Helper to draw simple background decoration
+        function drawEnvironment() {
+            ctx.save();
+            
+            // Draw a rock
+            ctx.fillStyle = '#795548';
+            ctx.beginPath();
+            ctx.ellipse(W - 60, H - 40, 40, 20, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw a plant
+            ctx.strokeStyle = '#2e7d32';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(W - 80, H - 40);
+            // Simple bezier curve for the plant
+            ctx.quadraticCurveTo(W - 100, H - 100, W - 50, H - 130);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Start the application
+        init();
+        requestAnimationFrame(gameLoop);
+
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: GLM-4.7-Flash-UD-Q6_K_XL.gguf -->
+<!-- Prompt: aquarium.md -->
+<!-- Time: 50.17s -->
+<!-- Fallback: False -->

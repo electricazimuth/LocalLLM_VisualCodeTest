@@ -1,0 +1,280 @@
+# Autonomous Aquarium Simulation
+
+I'll create a visually appealing aquarium simulation with autonomous fish behavior using HTML5 Canvas and JavaScript. The solution will include multiple fish with natural swimming patterns, boundary interactions, and smooth animations.
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #e0f7fa; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas { 
+            display: block; 
+            margin: 20px auto; 
+            border: 1px solid #888; 
+            background-color: #a0e7ff; 
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #0d47a1;
+            text-align: center;
+            margin-top: 10px;
+        }
+        #notes {
+            max-width: 800px;
+            margin: 20px;
+            padding: 15px;
+            background-color: #e3f2fd;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        #notes h2 {
+            margin-top: 0;
+            color: #0d47a1;
+        }
+        #notes ul {
+            padding-left: 20px;
+        }
+        #notes li {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Autonomous Aquarium Simulation</h1>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+    
+    <section id="notes">
+        <h2>Implementation Notes</h2>
+        <ul>
+            <li><strong>Fish Class:</strong> Each fish is an object with position, velocity, size, and color properties</li>
+            <li><strong>Autonomous Behavior:</strong> Fish wander with gradual direction changes and avoid boundaries</li>
+            <li><strong>Boundary Handling:</strong> Fish smoothly turn away from edges toward center</li>
+            <li><strong>Visual Design:</strong> Fish are drawn with a body, tail, and eye to create natural appearance</li>
+            <li><strong>Physics:</strong> Delta time ensures smooth animation regardless of frame rate</li>
+            <li><strong>Performance:</strong> Efficient rendering and object management for 15 fish</li>
+        </ul>
+    </section>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Aquarium background with subtle texture
+        function drawAquariumBackground() {
+            // Draw water gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, H);
+            gradient.addColorStop(0, '#a0e7ff');
+            gradient.addColorStop(1, '#4fc3f7');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, W, H);
+            
+            // Draw some bubbles
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            for (let i = 0; i < 30; i++) {
+                const x = Math.random() * W;
+                const y = Math.random() * H;
+                const radius = Math.random() * 3 + 1;
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Draw some plants at the bottom
+            ctx.fillStyle = '#2e7d32';
+            for (let i = 0; i < 10; i++) {
+                const x = i * 80 + 20;
+                const height = Math.random() * 60 + 40;
+                ctx.beginPath();
+                ctx.moveTo(x, H);
+                ctx.lineTo(x - 10, H - height);
+                ctx.lineTo(x + 10, H - height);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+
+        // Fish class
+        class Fish {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 15 + 10; // Random size between 10 and 25
+                this.speed = Math.random() * 2 + 1; // Random speed between 1 and 3
+                this.angle = Math.random() * Math.PI * 2; // Random starting angle
+                this.color = this.getRandomColor();
+                this.wanderAngle = 0; // For wandering behavior
+                this.tailAngle = 0; // For tail animation
+                this.tailDirection = 1; // Tail animation direction
+                this.maxTurnSpeed = 0.02; // Maximum turn speed
+                this.boundaryAvoidance = 50; // Distance to start avoiding boundaries
+            }
+            
+            getRandomColor() {
+                const colors = [
+                    '#FF5252', // Red
+                    '#FFD740', // Yellow
+                    '#4CAF50', // Green
+                    '#29B6F6', // Blue
+                    '#BA68C8', // Purple
+                    '#FFAB00'  // Orange
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+            
+            // Update fish position and behavior
+            update(deltaTime) {
+                // Update tail animation
+                this.tailAngle += 0.2 * this.tailDirection;
+                if (this.tailAngle > 0.5 || this.tailAngle < -0.5) {
+                    this.tailDirection *= -1;
+                }
+                
+                // Apply wandering behavior
+                this.wanderAngle += (Math.random() - 0.5) * 0.05;
+                this.angle += this.wanderAngle * deltaTime * 0.01;
+                
+                // Apply velocity based on angle and speed
+                this.x += Math.cos(this.angle) * this.speed * deltaTime * 0.1;
+                this.y += Math.sin(this.angle) * this.speed * deltaTime * 0.1;
+                
+                // Boundary avoidance - when close to edges, turn toward center
+                const margin = 30;
+                if (this.x < margin) {
+                    this.angle = Math.atan2(H/2 - this.y, W/2 - this.x);
+                } else if (this.x > W - margin) {
+                    this.angle = Math.atan2(H/2 - this.y, W/2 - this.x);
+                }
+                if (this.y < margin) {
+                    this.angle = Math.atan2(H/2 - this.y, W/2 - this.x);
+                } else if (this.y > H - margin) {
+                    this.angle = Math.atan2(H/2 - this.y, W/2 - this.x);
+                }
+                
+                // Keep fish within bounds
+                this.x = Math.max(margin, Math.min(W - margin, this.x));
+                this.y = Math.max(margin, Math.min(H - margin, this.y));
+            }
+            
+            // Draw the fish with orientation
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+                
+                // Draw fish body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size, this.size/2, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw fish tail
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.moveTo(-this.size, 0);
+                ctx.lineTo(-this.size - this.size/2, -this.size/2 + Math.sin(this.tailAngle) * 3);
+                ctx.lineTo(-this.size - this.size/2, this.size/2 + Math.sin(this.tailAngle) * 3);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Draw fish eye
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(this.size/2, -this.size/4, this.size/4, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(this.size/2, -this.size/4, this.size/8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+
+        // Create fish array
+        const fishArray = [];
+        const fishCount = 15;
+        
+        // Initialize fish
+        for (let i = 0; i < fishCount; i++) {
+            const x = Math.random() * (W - 100) + 50;
+            const y = Math.random() * (H - 100) + 50;
+            fishArray.push(new Fish(x, y));
+        }
+
+        // Animation loop with delta time
+        let lastTimestamp = 0;
+        
+        function gameLoop(timestamp) {
+            // Calculate delta time for frame-rate independent movement
+            const deltaTime = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+            
+            // Draw aquarium background
+            drawAquariumBackground();
+            
+            // Update and draw all fish
+            fishArray.forEach(fish => {
+                fish.update(deltaTime);
+                fish.draw();
+            });
+            
+            // Continue animation loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the simulation
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
+```
+
+## Key Features of the Implementation
+
+1. **Object-Oriented Design**:
+   - Fish class encapsulates all properties and behaviors
+   - Each fish has position, velocity, size, color, and movement properties
+
+2. **Autonomous Fish Behavior**:
+   - Natural wandering with gradual direction changes
+   - Boundary detection and smooth turning behavior
+   - Fish orient themselves in the direction they're swimming
+
+3. **Visual Elements**:
+   - Realistic fish with body, tail, and eye
+   - Tail wiggling animation for natural movement
+   - Background with water gradient, bubbles, and plants
+   - Colorful fish with varied sizes and colors
+
+4. **Physics and Animation**:
+   - Delta time implementation for consistent animation speed
+   - Boundary avoidance that smoothly steers fish toward center
+   - Frame-rate independent movement
+
+5. **Performance**:
+   - Efficient rendering with canvas context management
+   - Optimized fish update and draw logic
+   - Handles 15 fish smoothly
+
+The simulation creates a calming, natural-looking aquarium environment where fish swim autonomously with realistic behaviors. The implementation follows best practices for object-oriented JavaScript and efficient canvas rendering.
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Qwen3-Coder-30B-A3B-Instruct-UD-Q6_K_XL.gguf -->
+<!-- Prompt: aquarium.md -->
+<!-- Generation Time: 19.34s -->
+<!-- Fallback Used: False -->

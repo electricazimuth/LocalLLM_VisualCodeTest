@@ -1,0 +1,251 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
+    <script>
+        /* ---------------------------  CONSTANTS  --------------------------- */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        const CENTER = { x: W / 2, y: H / 2 };
+
+        const NUM_BALLS = 20;
+        const BALL_RADIUS = 12;
+        const COLORS = [
+            '#f8b862', '#f6ad49', '#f39800', '#f08300', '#ec6d51',
+            '#ee7948', '#ed6d3d', '#ec6800', '#ec6800', '#ee7800',
+            '#eb6238', '#ea5506', '#ea5506', '#eb6101', '#e49e61',
+            '#e45e32', '#e17b34', '#dd7a56', '#db8449', '#d66a35'
+        ];
+
+        const HEPTAGON_RADIUS = 200;          // radius of the container
+        const GRAVITY = 200;                  // pixels / second²
+        const WALL_DAMPING = 0.8;             // energy loss on wall hit
+        const RESTITUTION = 0.9;              // ball‑ball collision coefficient
+        const ROTATION_SPEED = (2 * Math.PI) / 5; // rad / second (360° / 5s)
+
+        /* ---------------------------  HELPERS  --------------------------- */
+        function rotatePoint(px, py, angle) {
+            const cos = Math.cos(angle), sin = Math.sin(angle);
+            return {
+                x: px * cos - py * sin,
+                y: px * sin + py * cos
+            };
+        }
+
+        function getHeptagonVertices(angle) {
+            const verts = [];
+            for (let i = 0; i < 7; i++) {
+                const theta = (Math.PI / 4) + (2 * Math.PI / 7) * i; // start at 45°
+                const r = rotatePoint(HEPTAGON_RADIUS, 0, theta + angle);
+                verts.push({ x: CENTER.x + r.x, y: CENTER.y + r.y });
+            }
+            return verts;
+        }
+
+        /* ---------------------------  BALL CLASS  --------------------------- */
+        class Ball {
+            constructor(num, color) {
+                this.num = num;
+                this.color = color;
+                this.r = BALL_RADIUS;
+                this.mass = this.r * this.r; // mass proportional to area
+                this.x = CENTER.x;
+                this.y = CENTER.y;
+                // random initial velocity (px/s)
+                const speed = 150; // max initial speed
+                const ang = Math.random() * 2 * Math.PI;
+                this.vx = speed * Math.cos(ang);
+                this.vy = speed * Math.sin(ang);
+            }
+
+            update(dt) {
+                // gravity
+                this.vy += GRAVITY * dt;
+                // position
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.stroke();
+                // number
+                ctx.fillStyle = '#000';
+                ctx.font = `${this.r}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.num, this.x, this.y);
+            }
+        }
+
+        /* ---------------------------  INITIAL SETUP  --------------------------- */
+        const balls = [];
+        for (let i = 0; i < NUM_BALLS; i++) {
+            balls.push(new Ball(i + 1, COLORS[i % COLORS.length]));
+        }
+
+        let lastTime = null;
+        let angle = 0; // current rotation angle (rad)
+
+        /* ---------------------------  COLLISION HELPERS  --------------------------- */
+        function pointLineDistance(px, py, x1, y1, x2, y2) {
+            const vx = x2 - x1, vy = y2 - y1;
+            const wx = px - x1, wy = py - y1;
+            const c1 = wx * vx + wy * vy;
+            const c2 = vx * vx + vy * vy;
+            let t = c1 / c2;
+            t = Math.max(0, Math.min(1, t));
+            const closestX = x1 + t * vx;
+            const closestY = y1 + t * vy;
+            const dx = px - closestX, dy = py - closestY;
+            return { dist: Math.hypot(dx, dy), closestX, closestY, t };
+        }
+
+        function reflectVelocity(vx, vy, nx, ny) {
+            const dot = vx * nx + vy * ny;
+            const rx = vx - 2 * dot * nx;
+            const ry = vy - 2 * dot * ny;
+            return { vx: rx * WALL_DAMPING, vy: ry * WALL_DAMPING };
+        }
+
+        function handleWallCollisions(ball, verts) {
+            for (let i = 0; i < verts.length; i++) {
+                const p1 = verts[i];
+                const p2 = verts[(i + 1) % verts.length];
+                const { dist, closestX, closestY } = pointLineDistance(
+                    ball.x, ball.y, p1.x, p1.y, p2.x, p2.y
+                );
+                if (dist < ball.r) {
+                    // compute inward normal (edge rotated 90° clockwise)
+                    const ex = p2.x - p1.x;
+                    const ey = p2.y - p1.y;
+                    let nx = ey, ny = -ex;
+                    const len = Math.hypot(nx, ny);
+                    nx /= len; ny /= len; // normalize
+                    // reflect
+                    const newVel = reflectVelocity(ball.vx, ball.vy, nx, ny);
+                    ball.vx = newVel.vx;
+                    ball.vy = newVel.vy;
+                    // push ball out of collision
+                    const overlap = ball.r - dist;
+                    ball.x = closestX + nx * overlap;
+                    ball.y = closestY + ny * overlap;
+                }
+            }
+        }
+
+        function handleBallCollisions() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    const a = balls[i];
+                    const b = balls[j];
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const dist = Math.hypot(dx, dy);
+                    const minDist = a.r + b.r;
+                    if (dist < minDist) {
+                        // normal
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+                        // relative velocity
+                        const dvx = a.vx - b.vx;
+                        const dvy = a.vy - b.vy;
+                        const relVel = dvx * nx + dvy * ny;
+                        if (relVel < 0) continue; // already separating
+                        const j = -(1 + RESTITUTION) * relVel / (1 / a.mass + 1 / b.mass);
+                        // apply impulse
+                        a.vx += (j * nx) / a.mass;
+                        a.vy += (j * ny) / a.mass;
+                        b.vx -= (j * nx) / b.mass;
+                        b.vy -= (j * ny) / b.mass;
+                        // positional correction to avoid sinking
+                        const overlap = minDist - dist;
+                        const correction = overlap / 2;
+                        a.x -= nx * correction;
+                        a.y -= ny * correction;
+                        b.x += nx * correction;
+                        b.y += ny * correction;
+                    }
+                }
+            }
+        }
+
+        /* ---------------------------  MAIN LOOP  --------------------------- */
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const dt = (timestamp - lastTime) / 1000; // in seconds
+            lastTime = timestamp;
+
+            // rotate container
+            angle += ROTATION_SPEED * dt;
+            if (angle > 2 * Math.PI) angle -= 2 * Math.PI;
+
+            // clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // draw rotating heptagon
+            const verts = getHeptagonVertices(angle);
+            ctx.beginPath();
+            ctx.moveTo(verts[0].x, verts[0].y);
+            for (let i = 1; i < verts.length; i++) {
+                ctx.lineTo(verts[i].x, verts[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // update balls
+            for (const ball of balls) {
+                ball.update(dt);
+                handleWallCollisions(ball, verts);
+            }
+
+            // ball‑ball collisions
+            handleBallCollisions();
+
+            // draw balls
+            for (const ball of balls) {
+                ball.draw(ctx);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        <h2>How the simulation works</h2>
+        <ul>
+            <li>The heptagon rotates at 360° every 5 seconds.</li>
+            <li>Gravity is applied in screen coordinates; the container walls rotate.</li>
+            <li>Wall collisions reflect the ball’s velocity, apply a damping factor (0.8) and push the ball back inside.</li>
+            <li>Ball‑ball collisions use an impulse‑based response with a restitution of 0.9.</li>
+            <li>All physics calculations are done in world coordinates; the container is simply drawn with a rotation.</li>
+            <li>With only 20 balls the simple O(n²) collision test runs comfortably at 60 fps.</li>
+        </ul>
+    </section>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: gpt-oss-20b-mxfp4.gguf -->
+<!-- Prompt: heptagon.md -->
+<!-- Generation Time: 31.15s -->
+<!-- Fallback Used: False -->

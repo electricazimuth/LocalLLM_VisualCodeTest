@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #111; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas { 
+            border: 1px solid #444; 
+            background-color: #000; 
+            display: block; 
+            margin: 20px auto; 
+            box-shadow: 0 0 20px rgba(255, 100, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Particle Management ---
+        const particles = [];
+        let lastLaunchTime = 0;
+        const launchInterval = 1000; // milliseconds
+        const gravity = 0.1;
+        const friction = 0.99;
+        const minExplosionParticles = 30;
+        const maxExplosionParticles = 80;
+        const minExplosionSize = 2;
+        const maxExplosionSize = 6;
+        const minRocketVelocity = -10;
+        const maxRocketVelocity = -15;
+        const minRocketSpread = -2;
+        const maxRocketSpread = 2;
+
+        // --- Particle Classes ---
+        class Particle {
+            constructor(x, y, vx, vy, color, size, lifespan) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.color = color;
+                this.size = size;
+                this.lifespan = lifespan;
+                this.maxLifespan = lifespan;
+            }
+            
+            update(deltaTime) {
+                // Apply physics
+                this.vx *= friction;
+                this.vy *= friction;
+                this.vy += gravity;
+                
+                // Update position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                
+                // Decrease lifespan
+                this.lifespan -= deltaTime;
+            }
+            
+            draw() {
+                const alpha = this.lifespan / this.maxLifespan;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+            
+            isDead() {
+                return this.lifespan <= 0;
+            }
+        }
+
+        class Rocket extends Particle {
+            constructor(x, y) {
+                // Random velocity with upward bias
+                const vx = (Math.random() * (maxRocketSpread - minRocketSpread)) + minRocketSpread;
+                const vy = (Math.random() * (maxRocketVelocity - minRocketVelocity)) + minRocketVelocity;
+                
+                // Random color for the rocket
+                const hue = Math.floor(Math.random() * 360);
+                const color = `hsl(${hue}, 100%, 60%)`;
+                
+                super(x, y, vx, vy, color, 3, 2000); // 2 second lifespan
+                this.exploded = false;
+            }
+            
+            update(deltaTime) {
+                // Check if rocket should explode (based on height or time)
+                if (!this.exploded && (this.y < H * 0.3 || this.lifespan < 1000)) {
+                    this.explode();
+                } else {
+                    super.update(deltaTime);
+                }
+            }
+            
+            explode() {
+                this.exploded = true;
+                
+                // Create explosion particles
+                const particleCount = Math.floor(
+                    Math.random() * (maxExplosionParticles - minExplosionParticles) + 
+                    minExplosionParticles
+                );
+                
+                for (let i = 0; i < particleCount; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 5 + 2;
+                    const vx = Math.cos(angle) * speed;
+                    const vy = Math.sin(angle) * speed;
+                    
+                    // Use the rocket's color for explosion particles
+                    const size = Math.random() * (maxExplosionSize - minExplosionSize) + minExplosionSize;
+                    const lifespan = Math.random() * 1000 + 500; // 0.5-1.5 seconds
+                    
+                    particles.push(
+                        new Particle(
+                            this.x, 
+                            this.y, 
+                            vx, 
+                            vy, 
+                            this.color, 
+                            size, 
+                            lifespan
+                        )
+                    );
+                }
+                
+                // Remove rocket from particles array
+                const index = particles.indexOf(this);
+                if (index !== -1) {
+                    particles.splice(index, 1);
+                }
+            }
+            
+            draw() {
+                // Draw rocket as a bright streak
+                ctx.globalAlpha = 0.8;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw tail effect
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.x - this.vx * 5, this.y - this.vy * 5);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // --- Game Loop ---
+        let lastTime = 0;
+        let particleCount = 0;
+
+        function gameLoop(timestamp) {
+            // Calculate delta time
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            // Clear canvas with a dark background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, W, H);
+            
+            // Launch new rockets
+            if (timestamp - lastLaunchTime > launchInterval) {
+                particles.push(new Rocket(W/2 + (Math.random() * 100 - 50), H));
+                lastLaunchTime = timestamp;
+            }
+            
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                particle.update(deltaTime);
+                particle.draw();
+                
+                // Remove dead particles
+                if (particle.isDead()) {
+                    particles.splice(i, 1);
+                }
+            }
+            
+            // Draw info text
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.font = '14px Arial';
+            ctx.fillText(`Particles: ${particles.length}`, 20, 30);
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+
+        // Add notes
+        const notes = document.getElementById('notes');
+        notes.innerHTML = `
+            <h3>Fireworks Simulation Notes</h3>
+            <ul>
+                <li>Fireworks automatically launch from the bottom center of the canvas</li>
+                <li>Rockets travel upward with random horizontal spread</li>
+                <li>Upon reaching a certain height or time, rockets explode into colorful particles</li>
+                <li>Explosion particles are affected by gravity and fade out over time</li>
+                <li>All particles are managed efficiently in a single array</li>
+                <li>Delta time ensures smooth animation regardless of frame rate</li>
+                <li>Canvas size is 800x600 pixels for optimal fireworks display</li>
+            </ul>
+        `;
+    </script>
+    <section id="notes">
+    </section>
+</body>
+</html>

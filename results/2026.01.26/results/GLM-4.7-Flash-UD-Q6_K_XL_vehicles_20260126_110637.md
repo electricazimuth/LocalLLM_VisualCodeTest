@@ -1,0 +1,355 @@
+Here is the complete, self-contained HTML file. It includes the simulation logic, visual styling, and the requested state management system.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Collision & Explosion Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        canvas {
+            background-color: #000;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            border: 2px solid #444;
+            border-radius: 4px;
+        }
+
+        #ui-layer {
+            position: absolute;
+            bottom: 20px;
+            color: #aaa;
+            font-size: 14px;
+            text-align: center;
+            width: 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+    <div id="ui-layer">Simulation running... Vehicles wrap around edges.</div>
+
+    <script>
+        /**
+         * VEHICLE COLLISION SIMULATION
+         * 
+         * Architecture:
+         * 1. Classes: Vehicle, Particle, ExplosionText.
+         * 2. State Machine: 'RUNNING' -> 'EXPLODING' -> 'RESTARTING'.
+         * 3. Loop: requestAnimationFrame handling delta time.
+         */
+
+        // --- Configuration & Constants ---
+        const CONFIG = {
+            NUM_VEHICLES: 8,
+            VEHICLE_SPEED_MIN: 50,
+            VEHICLE_SPEED_MAX: 150,
+            VEHICLE_SIZE: 25, // Radius for collision
+            EXPLOSION_PARTICLE_COUNT: 30,
+            EXPLOSION_DURATION: 2.0, // Seconds
+            RESTART_DELAY: 1.0, // Seconds
+            COLORS: ['#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF5', '#FFFF33']
+        };
+
+        // --- Global State ---
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const uiLayer = document.getElementById('ui-layer');
+
+        let lastTime = 0;
+        let simulationState = 'RUNNING'; // 'RUNNING', 'EXPLODING', 'RESTARTING'
+        let vehicles = [];
+        let particles = [];
+        let explosionTimer = 0;
+        let restartTimer = 0;
+        let collisionPoint = { x: 0, y: 0, color: '#fff' };
+
+        // --- Utility Functions ---
+        const randomRange = (min, max) => Math.random() * (max - min) + min;
+        const randomColor = () => CONFIG.COLORS[Math.floor(Math.random() * CONFIG.COLORS.length)];
+        
+        // Simple distance check
+        const getDistance = (x1, y1, x2, y2) => Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+
+        // --- Classes ---
+
+        class Vehicle {
+            constructor() {
+                this.radius = CONFIG.VEHICLE_SIZE;
+                // Spawn within bounds to avoid immediate edge wrapping issues
+                this.x = randomRange(this.radius, canvas.width - this.radius);
+                this.y = randomRange(this.radius, canvas.height - this.radius);
+                
+                const speed = randomRange(CONFIG.VEHICLE_SPEED_MIN, CONFIG.VEHICLE_SPEED_MAX);
+                const angle = randomRange(0, Math.PI * 2);
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                
+                this.color = randomColor();
+                this.active = true; // Used for collision filtering
+            }
+
+            update(dt) {
+                if (!this.active) return;
+
+                // Move
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+
+                // Screen Wrapping
+                if (this.x < -this.radius) this.x = canvas.width + this.radius;
+                if (this.x > canvas.width + this.radius) this.x = -this.radius;
+                if (this.y < -this.radius) this.y = canvas.height + this.radius;
+                if (this.y > canvas.height + this.radius) this.y = -this.radius;
+            }
+
+            draw(ctx) {
+                if (!this.active) return;
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Calculate rotation based on velocity
+                const angle = Math.atan2(this.vy, this.vx);
+                ctx.rotate(angle);
+
+                // Draw Body (Rectangle)
+                ctx.fillStyle = this.color;
+                ctx.fillRect(-this.radius, -this.radius * 0.6, this.radius * 2, this.radius * 1.2);
+
+                // Draw Wheels (Circles)
+                ctx.fillStyle = '#111';
+                ctx.beginPath();
+                ctx.arc(-this.radius * 0.6, -this.radius * 0.7, this.radius * 0.25, 0, Math.PI * 2);
+                ctx.arc(-this.radius * 0.6, this.radius * 0.7, this.radius * 0.25, 0, Math.PI * 2);
+                ctx.arc(this.radius * 0.6, -this.radius * 0.7, this.radius * 0.25, 0, Math.PI * 2);
+                ctx.arc(this.radius * 0.6, this.radius * 0.7, this.radius * 0.25, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Headlights
+                ctx.fillStyle = '#FFF';
+                ctx.fillRect(this.radius * 0.8, -this.radius * 0.4, 4, 4);
+                ctx.fillRect(this.radius * 0.8, this.radius * 0.4, 4, 4);
+
+                ctx.restore();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                const angle = randomRange(0, Math.PI * 2);
+                const speed = randomRange(50, 200);
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.life = 1.0; // 100% life
+                this.decay = randomRange(0.8, 2.0); // Decay rate
+                this.size = randomRange(2, 5);
+            }
+
+            update(dt) {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.life -= this.decay * dt;
+            }
+
+            draw(ctx) {
+                if (this.life <= 0) return;
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        class ExplosionText {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.scale = 0;
+                this.maxScale = 5;
+                this.life = 1.0;
+                this.growthSpeed = 8;
+                this.fadeSpeed = 2;
+            }
+
+            update(dt) {
+                if (this.scale < this.maxScale) {
+                    this.scale += this.growthSpeed * dt;
+                } else {
+                    this.life -= this.fadeSpeed * dt;
+                }
+            }
+
+            draw(ctx) {
+                if (this.life <= 0) return;
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.scale(this.scale, this.scale);
+                ctx.font = "bold 60px Arial";
+                ctx.fillStyle = this.color;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("BOOM!", 0, 0);
+                ctx.restore();
+            }
+        }
+
+        // --- Core Logic ---
+
+        function initSimulation() {
+            vehicles = [];
+            particles = [];
+            simulationState = 'RUNNING';
+            uiLayer.textContent = "Simulation running... Collision imminent.";
+            explosionTimer = 0;
+            restartTimer = 0;
+
+            for (let i = 0; i < CONFIG.NUM_VEHICLES; i++) {
+                vehicles.push(new Vehicle());
+            }
+        }
+
+        function handleCollisions() {
+            // Naive O(N^2) check is fine for N < 20
+            for (let i = 0; i < vehicles.length; i++) {
+                if (!vehicles[i].active) continue;
+
+                for (let j = i + 1; j < vehicles.length; j++) {
+                    if (!vehicles[j].active) continue;
+
+                    const v1 = vehicles[i];
+                    const v2 = vehicles[j];
+                    const dist = getDistance(v1.x, v1.y, v2.x, v2.y);
+
+                    // Collision detected
+                    if (dist < v1.radius + v2.radius) {
+                        // Mark inactive
+                        v1.active = false;
+                        v2.active = false;
+
+                        // Trigger Explosion
+                        collisionPoint.x = (v1.x + v2.x) / 2;
+                        collisionPoint.y = (v1.y + v2.y) / 2;
+                        collisionPoint.color = v1.color; // Use one of the colors for the explosion
+
+                        // Create particles
+                        for (let k = 0; k < CONFIG.EXPLOSION_PARTICLE_COUNT; k++) {
+                            particles.push(new Particle(collisionPoint.x, collisionPoint.y, collisionPoint.color));
+                        }
+                        
+                        // Create Text
+                        particles.push(new ExplosionText(collisionPoint.x, collisionPoint.y, '#FFF'));
+
+                        // Change State
+                        simulationState = 'EXPLODING';
+                        explosionTimer = 0;
+                        uiLayer.textContent = "CRASH! Simulation resetting...";
+                        return; // Stop checking collisions for this frame
+                    }
+                }
+            }
+        }
+
+        function update(dt) {
+            if (simulationState === 'RUNNING') {
+                // Update Vehicles
+                vehicles.forEach(v => v.update(dt));
+                
+                // Check Collisions
+                handleCollisions();
+            } 
+            else if (simulationState === 'EXPLODING') {
+                // Update Particles
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    particles[i].update(dt);
+                    if (particles[i].life <= 0) {
+                        particles.splice(i, 1);
+                    }
+                }
+
+                explosionTimer += dt;
+
+                // Switch to Restarting when explosion finishes
+                if (explosionTimer >= CONFIG.EXPLOSION_DURATION) {
+                    simulationState = 'RESTARTING';
+                    restartTimer = 0;
+                }
+            } 
+            else if (simulationState === 'RESTARTING') {
+                restartTimer += dt;
+                if (restartTimer >= CONFIG.RESTART_DELAY) {
+                    initSimulation();
+                }
+            }
+        }
+
+        function draw() {
+            // Clear Canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Grid (Optional visual flair)
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for(let x=0; x<canvas.width; x+=50) { ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); }
+            for(let y=0; y<canvas.height; y+=50) { ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); }
+            ctx.stroke();
+
+            // Draw Objects based on State
+            if (simulationState === 'RUNNING') {
+                vehicles.forEach(v => v.draw(ctx));
+            } else {
+                particles.forEach(p => p.draw(ctx));
+            }
+        }
+
+        function loop(timestamp) {
+            // Calculate Delta Time in seconds
+            if (!lastTime) lastTime = timestamp;
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Cap dt to prevent huge jumps if tab was inactive
+            const safeDt = Math.min(dt, 0.1);
+
+            update(safeDt);
+            draw();
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- Initialization ---
+        initSimulation();
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: GLM-4.7-Flash-UD-Q6_K_XL.gguf -->
+<!-- Prompt: vehicles.md -->
+<!-- Time: 53.50s -->
+<!-- Fallback: False -->
