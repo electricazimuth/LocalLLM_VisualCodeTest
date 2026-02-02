@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; } /* Dark background suggested */
+        canvas { border: 1px solid #444; background-color: #000; display: block; margin: 20px auto; } /* Dark canvas bg */
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="512" height="512"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        class Particle {
+            constructor(x, y, vx, vy, color, lifespan, size) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.color = color;
+                this.lifespan = lifespan;
+                this.size = size;
+            }
+
+            update(dt) {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.vy += 0.2 * dt; // gravity effect
+                this.lifespan -= dt;
+            }
+
+            draw() {
+                ctx.globalAlpha = this.lifespan / this.initialLifespan;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class Rocket extends Particle {
+            constructor(x, y) {
+                super(x, y, (Math.random() - 0.5) * 2, -8, "#FFF", 2, 2);
+                this.initialLifespan = this.lifespan;
+            }
+
+            explode(particles) {
+                const numParticles = Math.floor(Math.random() * 50) + 30;
+                for (let i = 0; i < numParticles; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 3 + 1;
+                    const vx = Math.cos(angle) * speed;
+                    const vy = Math.sin(angle) * speed;
+                    const color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+                    const lifespan = Math.random() * 1.5 + 1;
+                    const size = Math.random() * 2 + 1;
+                    particles.push(new Particle(this.x, this.y, vx, vy, color, lifespan, size));
+                }
+            }
+        }
+
+        let particles = [];
+        let lastTime = 0;
+
+        function launchRocket() {
+            const x = W / 2;
+            const y = H;
+            particles.push(new Rocket(x, y));
+        }
+
+        function gameLoop(timestamp) {
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.update(dt);
+
+                if (p instanceof Rocket && (p.lifespan <= 0 || p.vy >= 0)) {
+                    p.explode(particles);
+                    particles.splice(i, 1);
+                } else if (p.lifespan <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Draw particles
+            particles.forEach(p => p.draw());
+
+            // Launch new rocket at random intervals
+            if (Math.random() < 0.01) {
+                launchRocket();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the loop
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This simulation uses a single array to manage all particles, including rockets and explosion fragments. The game loop updates and draws particles, and handles the launching of new rockets at random intervals.
+    </section>
+</body>
+</html>

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <script>
+        // --- Standard WebGL Boilerplate ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        // --- Vertex Shader ---
+        const vertexShaderSource = `
+            attribute vec2 a_position;
+            void main() {
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }
+        `;
+
+        // --- Fragment Shader ---
+        const fragmentShaderSource = `
+            precision highp float;
+
+            // Uniforms
+            uniform float u_time;
+            uniform vec2 u_resolution;
+
+            // SDF for a sphere
+            float sphereSDF(vec3 p, vec3 center, float radius) {
+                return length(p - center) - radius;
+            }
+
+            // Smooth minimum function for blending metaballs
+            float smin(float a, float b, float k) {
+                float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+                return mix(b, a, h) - k * h * (1.0 - h);
+            }
+
+            // Combine multiple metaballs using smooth min
+            float sceneSDF(vec3 p) {
+                float d = 100.0; // Start with a large distance
+
+                // Define metaball parameters (positions, radii, colors)
+                // We'll use time to animate positions and sizes
+                float t = u_time * 0.5;
+                float k = 0.5 + sin(t * 0.3) * 0.2; // Smooth min blend factor
+
+                // Metaball 1
+                vec3 center1 = vec3(
+                    sin(t * 0.8) * 0.5,
+                    cos(t * 0.6) * 0.5,
+                    sin(t * 0.4) * 0.5
+                );
+                float radius1 = 0.2 + sin(t * 0.7) * 0.05;
+                float d1 = sphereSDF(p, center1, radius1);
+
+                // Metaball 2
+                vec3 center2 = vec3(
+                    cos(t * 0.9) * 0.5,
+                    sin(t * 0.5) * 0.5,
+                    cos(t * 0.3) * 0.5
+                );
+                float radius2 = 0.2 + cos(t * 0.9) * 0.05;
+                float d2 = sphereSDF(p, center2, radius2);
+
+                // Metaball 3
+                vec3 center3 = vec3(
+                    sin(t * 1.1) * 0.5,
+                    cos(t * 0.7) * 0.5,
+                    sin(t * 0.5) * 0.5
+                );
+                float radius3 = 0.2 + sin(t * 1.2) * 0.05;
+                float d3 = sphereSDF(p, center3, radius3);
+
+                // Combine with smooth min
+                float d12 = smin(d1, d2, k);
+                float d123 = smin(d12, d3, k);
+
+                return d123;
+            }
+
+            // Gradient of SDF for normal calculation
+            vec3 getNormal(vec3 p) {
+                float eps = 0.001;
+                vec3 n = vec3(
+                    sceneSDF(vec3(p.x + eps, p.y, p.z)) - sceneSDF(vec3(p.x - eps, p.y, p.z)),
+                    sceneSDF(vec3(p.x, p.y + eps, p.z)) - sceneSDF(vec3(p.x, p.y - eps, p.z)),
+                    sceneSDF(vec3(p.x, p.y, p.z + eps)) - sceneSDF(vec3(p.x, p.y, p.z - eps))
+                );
+                return normalize(n);
+            }
+
+            // Simple lighting function
+            vec3 lighting(vec3 pos, vec3 normal, float t) {
+                // Light direction (animated for more movement)
+                vec3 lightDir = normalize(vec3(
+                    cos(t * 0.3) * 0.5 + 0.5,
+                    sin(t * 0.4) * 0.5 + 0.5,
+                    0.5
+                ));
+
+                // Diffuse lighting
+                float diff = max(0.0, dot(normal, lightDir));
+                vec3 color = vec3(
+                    0.5 + sin(t * 0.1 + pos.x * 10.0) * 0.5,
+                    0.5 + sin(t * 0.2 + pos.y * 10.0) * 0.5,
+                    0.5 + sin(t * 0.3 + pos.z * 10.0) * 0.5
+                );
+
+                // Add some glow based on distance to surface (for volumetric effect)
+                float glow = 1.0 - smoothstep(0.0, 0.01, length(pos - vec3(0.0, 0.0, 0.0)));
+                color = mix(color, vec3(1.0, 1.0, 1.0), glow * 0.3);
+
+                // Multiply by diffuse lighting
+                color *= 1.0 + diff * 0.5;
+
+                // Add noise-based texture for psychedelic effect
+                float noise = fract(sin(dot(pos, vec3(12.9898, 78.233, 37.719))) * 43758.5453123);
+                color += noise * 0.1;
+
+                return color;
+            }
+
+            // Ray marching function
+            vec3 rayMarch(vec3 rayOrigin, vec3 rayDir) {
+                float t = 0.0;
+                float maxDist = 5.0;
+                float minDist = 0.001;
+                int maxSteps = 100;
+                float sceneDist = 0.0;
+
+                for (int i = 0; i < maxSteps; i++) {
+                    vec3 p = rayOrigin + rayDir * t;
+                    sceneDist = sceneSDF(p);
+
+                    if (sceneDist < minDist) {
+                        // Hit surface
+                        return p;
+                    }
+
+                    if (t > maxDist) {
+                        // Missed surface
+                        return vec3(-1.0, -1.0, -1.0);
+                    }
+
+                    t += sceneDist;
+                }
+
+                // No hit
+                return vec3(-1.0, -1.0, -1.0);
+            }
+
+            // Main function
+            void main() {
+                // Get normalized screen coordinates
+                vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+                uv = uv * 2.0 - 1.0;
+                uv.x *= u_resolution.x / u_resolution.y; // Aspect ratio correction
+
+                // Camera setup
+                vec3 rayOrigin = vec3(0.0, 0.0, 1.0); // Camera at z=1, looking at origin
+                vec3 rayDir = normalize(vec3(uv, -1.0)); // Ray direction (looking at origin)
+
+                // Ray march
+                vec3 hitPos = rayMarch(rayOrigin, rayDir);
+
+                // Determine color
+                vec3 finalColor = vec3(0.0, 0.0, 0.0);
+
+                if (hitPos.x != -1.0) {
+                    // Calculate normal
+                    vec3 normal = getNormal(hitPos);
+                    // Get lighting
+                    finalColor = lighting(hitPos, normal, u_time);
+                }
+
+                // Add some ambient glow based on time
+                float ambientGlow = 0.1 + sin(u_time * 0.2) * 0.1;
+                finalColor = mix(finalColor, vec3(1.0, 0.0, 1.0) * ambientGlow, 1.0 - length(hitPos));
+
+                // Apply color modulation for psychedelic effect
+                float t = u_time * 0.5;
+                float hue = fract(t * 0.2 + uv.x * 0.5);
+                float sat = 0.8 + sin(t * 0.1) * 0.2;
+                float val = 0.8 + cos(t * 0.3) * 0.2;
+
+                // Convert HSV to RGB (simplified)
+                hue = fract(hue + 0.5);
+                float c = val * sat;
+                float x = c * (1.0 - abs(fract(hue * 6.0) - 1.0));
+                float m = val - c;
+
+                vec3 rgb;
+                if (hue < 1.0/6.0) {
+                    rgb = vec3(c, x, 0.0);
+                } else if (hue < 2.0/6.0) {
+                    rgb = vec3(x, c, 0.0);
+                } else if (hue < 3.0/6.0) {
+                    rgb = vec3(0.0, c, x);
+                } else if (hue < 4.0/6.0) {
+                    rgb = vec3(0.0, x, c);
+                } else if (hue < 5.0/6.0) {
+                    rgb = vec3(x, 0.0, c);
+                } else {
+                    rgb = vec3(c, 0.0, x);
+                }
+
+                finalColor = mix(finalColor, rgb, 0.5);
+
+                // Output final color
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `;
+
+        // --- Shader Creation ---
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // --- Program Creation ---
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program linking error:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            return program;
+        }
+
+        // --- Initialize WebGL ---
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const program = createProgram(gl, vertexShader, fragmentShader);
+
+        if (!program) {
+            alert('Failed to create shader program');
+            throw new Error('Failed to create shader program');
+        }
+
+        // --- Setup Vertex Buffer ---
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        const positions = [
+            -1, -1,
+            1, -1,
+            -1, 1,
+            -1, 1,
+            1, -1,
+            1, 1
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        // --- Get Attribute & Uniform Locations ---
+        const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+        const timeUniformLocation = gl.getUniformLocation(program, 'u_time');
+        const resolutionUniformLocation = gl.getUniformLocation(program, 'u_resolution');
+
+        // --- Render Loop ---
+        let then = 0;
+        function render(now) {
+            now *= 0.001; // Convert to seconds
+            const deltaTime = now - then;
+            then = now;
+
+            // Update uniforms
+            gl.uniform1f(timeUniformLocation, now);
+            gl.uniform2f(resolutionUniformLocation, canvas.width, canvas.height);
+
+            // Clear canvas
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Draw quad
+            gl.useProgram(program);
+            gl.enableVertexAttribArray(positionAttributeLocation);
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // Request next frame
+            requestAnimationFrame(render);
+        }
+
+        // --- Resize Handler ---
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); // Initial resize
+
+        // --- Start Animation ---
+        requestAnimationFrame(render);
+    </script>
+
+    <!-- Developer Notes -->
+    <section id="notes" style="display: none; position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; font-family: monospace; font-size: 12px; border: 1px solid #444;">
+        <h3>Psychedelic Metaball Simulation Notes</h3>
+        <p><strong>Core Technique:</strong> Ray marching with Signed Distance Functions (SDFs) to render smooth, merging metaballs.</p>
+        <p><strong>Smooth Min:</strong> Uses <code>smin(a, b, k)</code> to blend metaballs organically. The <code>k</code> factor is animated to vary blend sharpness.</p>
+        <p><strong>Animation:</strong> Time-driven motion for metaball positions and radii. Uses sine/cosine waves for smooth, fluid movement.</p>
+        <p><strong>Shading:</strong> Simple lighting with animated light direction. Adds noise and hue modulation for psychedelic effect.</p>
+        <p><strong>Performance:</strong> Limited to 100 steps per ray. Could be optimized further with adaptive step sizes or early termination.</p>
+        <p><strong>Visual Style:</strong> Inspired by 1960s liquid light shows — vibrant, shifting colors, organic motion, and volumetric glow.</p>
+    </section>
+</body>
+</html>

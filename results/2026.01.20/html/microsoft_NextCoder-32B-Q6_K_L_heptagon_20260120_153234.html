@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { border: 1px solid black; background-color: #fff; display: block; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        const gravity = 0.2;
+        const damping = 0.8;
+        const ballColors = ['#f8b862', '#f6ad49', '#f39800', '#f08300', '#ec6d51', '#ee7948', '#ed6d3d', '#ec6800', '#ec6800', '#ee7800', '#eb6238', '#ea5506', '#ea5506', '#eb6101', '#e49e61', '#e45e32', '#e17b34', '#dd7a56', '#db8449', '#d66a35'];
+        const ballRadius = 15;
+        const numBalls = 20;
+        const heptagonRadius = 200;
+        const heptagonSpeed = 0.02;
+        let angle = 0;
+
+        class Ball {
+            constructor(x, y, vx, vy, radius, color, number) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = radius;
+                this.color = color;
+                this.number = number;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+
+                ctx.font = '12px Arial';
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.number, this.x, this.y);
+            }
+
+            update() {
+                this.vy += gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wall collision detection
+                if (this.x + this.radius > W || this.x - this.radius < 0) {
+                    this.vx = -this.vx * damping;
+                    this.x = (this.x + this.radius > W) ? W - this.radius : this.radius;
+                }
+                if (this.y + this.radius > H || this.y - this.radius < 0) {
+                    this.vy = -this.vy * damping;
+                    this.y = (this.y + this.radius > H) ? H - this.radius : this.radius;
+                }
+            }
+        }
+
+        function getHeptagonPoints() {
+            const points = [];
+            for (let i = 0; i < 7; i++) {
+                const x = W / 2 + heptagonRadius * Math.cos(angle + i * Math.PI * 2 / 7);
+                const y = H / 2 + heptagonRadius * Math.sin(angle + i * Math.PI * 2 / 7);
+                points.push({ x, y });
+            }
+            return points;
+        }
+
+        function drawHeptagon(points) {
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
+        }
+
+        function pointInPolygon(point, vs) {
+            const x = point.x, y = point.y;
+            let inside = false;
+            for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+                const xi = vs[i].x, yi = vs[i].y;
+                const xj = vs[j].x, yj = vs[j].y;
+                const intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        function checkBallWallCollision(ball, points) {
+            if (!pointInPolygon({ x: ball.x, y: ball.y }, points)) {
+                const closestPoint = points.reduce((prev, curr) => {
+                    const dx1 = ball.x - prev.x;
+                    const dy1 = ball.y - prev.y;
+                    const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+                    const dx2 = ball.x - curr.x;
+                    const dy2 = ball.y - curr.y;
+                    const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+                    return dist1 < dist2 ? prev : curr;
+                });
+
+                const dx = ball.x - closestPoint.x;
+                const dy = ball.y - closestPoint.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < ball.radius) {
+                    const nx = dx / dist;
+                    const ny = dy / dist;
+                    const k = (ball.vx * nx + ball.vy * ny) * (1 + damping);
+                    ball.vx -= k * nx;
+                    ball.vy -= k * ny;
+                }
+            }
+        }
+
+        function checkBallBallCollision(ball1, ball2) {
+            const dx = ball2.x - ball1.x;
+            const dy = ball2.y - ball1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < ball1.radius + ball2.radius) {
+                const nx = dx / distance;
+                const ny = dy / distance;
+                const k = (ball1.vx * nx + ball1.vy * ny - ball2.vx * nx - ball2.vy * ny) / (1 / ball1.radius + 1 / ball2.radius);
+                ball1.vx -= k * nx / ball1.radius;
+                ball1.vy -= k * ny / ball1.radius;
+                ball2.vx += k * nx / ball2.radius;
+                ball2.vy += k * ny / ball2.radius;
+            }
+        }
+
+        const balls = [];
+        for (let i = 0; i < numBalls; i++) {
+            balls.push(new Ball(W / 2, H / 2, Math.random() * 4 - 2, Math.random() * 4 - 2, ballRadius, ballColors[i], i + 1));
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, W, H);
+
+            angle += heptagonSpeed;
+
+            const points = getHeptagonPoints();
+            drawHeptagon(points);
+
+            balls.forEach(ball => {
+                ball.update();
+                checkBallWallCollision(ball, points);
+                balls.forEach(otherBall => {
+                    if (ball !== otherBall) {
+                        checkBallBallCollision(ball, otherBall);
+                    }
+                });
+                ball.draw();
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+    <section id="notes">
+        This simulation demonstrates 20 bouncing balls inside a spinning heptagon. Each ball has a unique color and number. The balls interact with each other and the container walls under the influence of gravity, losing energy upon collision. The heptagon spins around its center at a rate of 360 degrees per 5 seconds.
+    </section>
+</body>
+</html>

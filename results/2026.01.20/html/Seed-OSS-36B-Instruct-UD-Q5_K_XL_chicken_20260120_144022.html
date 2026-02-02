@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chicken Simulation</title>
+    <style>
+        body { margin: 10px; overflow: hidden; background-color: #eee; }
+        canvas { display: block; margin: 20px auto; border: 1px solid #999; background-color: #90ee90; } /* Light green grass background */
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="512" height="512"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        let chicken;
+        let eggs = [];
+        let lastTime = 0;
+
+        // --- Egg Class ---
+        class Egg {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 15;
+                this.height = 20;
+                this.color = '#FFF8DC'; // Cornsilk
+                this.spotColor = '#8B4513'; // SaddleBrown
+                this.lifespan = 10 + Math.random() * 5; // 10-15 second lifespan
+                this.age = 0;
+                this.isAlive = true;
+            }
+
+            update(delta) {
+                this.age += delta;
+                if (this.age >= this.lifespan) this.isAlive = false;
+            }
+
+            draw(context) {
+                if (!this.isAlive) return;
+
+                context.save();
+                context.translate(this.x, this.y);
+                context.rotate(-Math.PI / 6); // Slight tilt for realism
+
+                // Fade effect as egg ages
+                const alpha = 1 - (this.age / this.lifespan);
+                context.globalAlpha = alpha;
+
+                // Draw egg shape
+                context.beginPath();
+                context.ellipse(0, 0, this.width, this.height, 0, 0, Math.PI * 2);
+                context.fillStyle = this.color;
+                context.fill();
+                context.strokeStyle = '#333';
+                context.stroke();
+
+                // Draw egg spot
+                context.beginPath();
+                context.arc(this.width * 0.3, this.height * 0.2, this.width * 0.2, 0, Math.PI * 2);
+                context.fillStyle = this.spotColor;
+                context.fill();
+
+                context.restore();
+            }
+        }
+
+        // --- Chicken Class ---
+        class Chicken {
+            constructor() {
+                // Core properties
+                this.x = canvas.width / 2;
+                this.y = canvas.height / 2;
+                this.size = 30; // Body radius
+                this.speed = 60; // Base speed (px/s)
+                this.directionAngle = Math.random() * Math.PI * 2; // Initial direction (radians)
+
+                // Movement velocity (derived from direction)
+                this.dx = this.speed * Math.cos(this.directionAngle);
+                this.dy = this.speed * Math.sin(this.directionAngle);
+
+                // State management
+                this.state = 'wandering'; // 'wandering' or 'laying'
+                this.layCooldown = 3 + Math.random() * 2; // 3-5s initial cooldown
+                this.layTimer = this.layCooldown; // Time until next egg
+                this.dirChangeTimer = 1 + Math.random() * 1; // 1-2s direction change interval
+                this.layingDuration = 0.5; // 0.5s laying animation
+                this.layingProgress = 0; // Tracks time in laying state
+
+                // Visual properties
+                this.bodyColor = '#FFE4B5'; // PeachPuff (normal)
+                this.layingColor = '#FFFACD'; // LemonChiffon (laying)
+                this.beakColor = '#FFA500'; // Orange
+            }
+
+            update(delta) {
+                switch (this.state) {
+                    case 'wandering':
+                        this.updateWandering(delta);
+                        break;
+                    case 'laying':
+                        this.updateLaying(delta);
+                        break;
+                }
+
+                // Always check boundaries
+                this.checkBoundaries();
+            }
+
+            updateWandering(delta) {
+                // Update direction change timer
+                this.dirChangeTimer -= delta;
+                if (this.dirChangeTimer <= 0) {
+                    this.changeDirection();
+                    this.dirChangeTimer = 1 + Math.random() * 1; // Randomize next change
+                }
+
+                // Update egg laying timer
+                this.layTimer -= delta;
+                if (this.layTimer <= 0) {
+                    this.state = 'laying';
+                    this.layingProgress = 0;
+                }
+
+                // Update position (frame-rate independent)
+                this.x += this.dx * delta;
+                this.y += this.dy * delta;
+            }
+
+            updateLaying(delta) {
+                // Progress through laying animation
+                this.layingProgress += delta;
+                if (this.layingProgress >= this.layingDuration) {
+                    this.layEgg();
+                    this.resetLayingState();
+                }
+            }
+
+            changeDirection() {
+                // Pick random direction (0-360 degrees)
+                this.directionAngle = Math.random() * Math.PI * 2;
+                // Update velocity to match new direction
+                this.dx = this.speed * Math.cos(this.directionAngle);
+                this.dy = this.speed * Math.sin(this.directionAngle);
+            }
+
+            checkBoundaries() {
+                const padding = this.size; // Prevent going outside canvas by body radius
+
+                // Left boundary
+                if (this.x < padding) {
+                    this.x = padding;
+                    this.directionAngle = Math.PI + Math.random() * Math.PI / 2; // Face right
+                }
+                // Right boundary
+                else if (this.x > canvas.width - padding) {
+                    this.x = canvas.width - padding;
+                    this.directionAngle = Math.random() * Math.PI / 2; // Face left
+                }
+
+                // Top boundary
+                if (this.y < padding) {
+                    this.y = padding;
+                    this.directionAngle = Math.PI / 2 + Math.random() * Math.PI / 2; // Face down
+                }
+                // Bottom boundary
+                else if (this.y > canvas.height - padding) {
+                    this.y = canvas.height - padding;
+                    this.directionAngle = 3 * Math.PI / 2 + Math.random() * Math.PI / 2; // Face up
+                }
+
+                // Update velocity after boundary correction
+                this.dx = this.speed * Math.cos(this.directionAngle);
+                this.dy = this.speed * Math.sin(this.directionAngle);
+            }
+
+            layEgg() {
+                // Position egg slightly behind chicken (opposite movement direction)
+                const offset = this.size * 0.4;
+                const eggX = this.x - offset * Math.cos(this.directionAngle);
+                const eggY = this.y - offset * Math.sin(this.directionAngle);
+                eggs.push(new Egg(eggX, eggY));
+            }
+
+            resetLayingState() {
+                this.state = 'wandering';
+                this.layTimer = 3 + Math.random() * 2; // Randomize next lay time
+            }
+
+            draw(context) {
+                context.save();
+                context.translate(this.x, this.y);
+                context.rotate(this.directionAngle); // Face movement direction
+
+                // Draw body (with laying state color)
+                context.beginPath();
+                context.arc(0, 0, this.size, 0, Math.PI * 2);
+                context.fillStyle = this.state === 'laying' ? this.layingColor : this.bodyColor;
+                context.fill();
+                context.strokeStyle = '#333';
+                context.stroke();
+
+                // Draw beak (triangle pointing right after rotation)
+                const beakSize = this.size * 0.3;
+                context.beginPath();
+                context.moveTo(beakSize, 0);
+                context.lineTo(-beakSize/2, beakSize/2);
+                context.lineTo(-beakSize/2, -beakSize/2);
+                context.closePath();
+                context.fillStyle = this.beakColor;
+                context.fill();
+                context.stroke();
+
+                // Draw eye (front-left position)
+                const eyeOffset = this.size * 0.6;
+                context.beginPath();
+                context.arc(-eyeOffset, -this.size*0.2, this.size*0.15, 0, Math.PI*2); // White part
+                context.fillStyle = 'white';
+                context.fill();
+                context.stroke();
+
+                // Draw pupil
+                context.beginPath();
+                context.arc(-eyeOffset + this.size*0.05, -this.size*0.2 + this.size*0.05, this.size*0.05, 0, Math.PI*2);
+                context.fillStyle = '#222';
+                context.fill();
+
+                context.restore();
+            }
+        }
+
+        // --- Animation Loop ---
+        function animate(currentTime) {
+            const delta = (currentTime - lastTime) / 1000; // Convert to seconds
+            lastTime = currentTime;
+
+            // Update game state
+            chicken.update(delta);
+            eggs.forEach(egg => egg.update(delta));
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw objects (eggs first, then chicken on top)
+            eggs.forEach(egg => egg.draw(ctx));
+            chicken.draw(ctx);
+
+            // Request next frame
+            requestAnimationFrame(animate);
+        }
+
+        // --- Initialization ---
+        function init() {
+            chicken = new Chicken();
+            eggs = [];
+            lastTime = performance.now();
+            requestAnimationFrame(animate);
+        }
+
+        // Start simulation
+        init();
+    </script>
+
+    <section id="notes">
+        <h3>Implementation Notes:</h3>
+        <ul>
+            <li><strong>Object Management:</strong> Uses ES6 classes for Chicken and Egg with clear separation of concerns.</li>
+            <li><strong>Movement AI:</strong> 
+                <ul>
+                    <li>Wandering behavior with random direction changes (1-2s intervals).</li>
+                    <li>Boundary handling uses direction adjustment instead of simple bouncing for natural movement.</li>
+                    <li>Frame-rate independent movement via delta time calculation.</li>
+                </ul>
+            </li>
+            <li><strong>Egg Laying:</strong> 
+                <ul>
+                    <li>Random cooldown (3-5s) between eggs.</li>
+                    <li>0.5s laying animation with visual color change.</li>
+                    <li>Eggs spawn slightly behind chicken (realistic offset) and fade out after 10-15s.</li>
+                </ul>
+            </li>
+            <li><strong>Visuals:</strong>
+                <ul>
+                    <li>Chicken oriented to face movement direction using canvas rotation.</li>
+                    <li>Eggs have subtle tilt and spot for realism.</li>
+                    <li>Soft fade-out for eggs instead of abrupt disappearance.</li>
+                </ul>
+            </li>
+            <li><strong>Performance:</strong> Uses requestAnimationFrame for smooth animation and efficient object updates.</li>
+        </ul>
+    </section>
+</body>
+</html>

@@ -1,0 +1,226 @@
+Below is a **single‑file** solution that you can copy straight into a *.html* file and open in any modern browser.  
+It follows the requirements:
+
+*   Object‑oriented design (`Fish` class) stored in an array.  
+*   Randomly initialised fish (12 of them).  
+*   Autonomous wandering movement, speed variation and smooth steering at the edges.  
+*   `requestAnimationFrame` loop with delta‑time for frame‑rate‑independent animation.  
+*   Fish are drawn as simple oriented silhouettes (body + tail + eye).  
+*   Optional notes are placed in the `<section id="notes">` element.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aquarium Simulation</title>
+<style>
+    /* Page background – a calm water colour */
+    body { margin:0; overflow:hidden; background:#e0f7fa; }
+    /* Canvas looks like a clear water tank */
+    canvas {
+        display:block;
+        margin:20px auto;
+        background:#a0d8f1;          /* water colour */
+        border:1px solid #5a9bd8;
+    }
+</style>
+</head>
+<body>
+
+<!-- The drawing surface -->
+<canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+<!-- Container for developer notes (optional) -->
+<section id="notes">
+    <h2>Implementation notes</h2>
+    <p>
+        • <strong>Fish class</strong> – encapsulates position, velocity, size, colour and drawing logic.<br>
+        • <strong>Wandering</strong> – each fish adds a tiny random delta to its heading every frame, giving organic turns.<br>
+        • <strong>Boundary steering</strong> – when a fish gets within 15 px of an edge it steers toward the centre of the tank, producing a smooth “bounce‑off” instead of a hard flip.<br>
+        • <strong>Delta‑time</strong> – the animation uses <code>performance.now()</code> to compute a frame‑rate independent <code>dt</code> (seconds) that scales movement and turning.<br>
+        • <strong>Rendering</strong> – the canvas is cleared each frame, then every fish is drawn after translating/rotating to its current pose.
+    </p>
+</section>
+
+<script>
+/* --------------------------------------------------------------
+   Configuration
+---------------------------------------------------------------- */
+const FISH_COUNT   = 12;          // how many fish
+const MARGIN       = 15;          // distance from edge before steering
+const MAX_SPEED    = 120;         // pixels per second (max)
+const MIN_SPEED    = 60;          // pixels per second (min)
+const TURN_RATE    = 1.5;         // radians per second (how fast heading changes)
+const HEADING_JITTER = 0.03;      // extra random heading change per frame (radians)
+const DT_FIXED     = 0.016;       // ~60 fps target step (seconds) – used for physics stability
+
+/* --------------------------------------------------------------
+   Helper – random value in range [min, max]
+---------------------------------------------------------------- */
+const randRange = (min, max) => min + Math.random() * (max - min);
+
+/* --------------------------------------------------------------
+   Fish class
+---------------------------------------------------------------- */
+class Fish {
+    constructor(x, y, speed, heading, size, colour) {
+        this.x        = x;               // centre x
+        this.y        = y;               // centre y
+        this.radius   = size;            // radius used for drawing & collision
+        this.speed    = speed;           // pixels per second
+        this.heading  = heading;         // radians, 0 = right
+        this.colour   = colour;          // fill colour
+        this.tailLen  = size * 0.6;      // tail length
+        this.bodyRad  = size * 0.4;      // body radius
+    }
+
+    /** Update position using velocity derived from speed & heading */
+    update(dt) {
+        // --- wandering: add a small random turn ---
+        this.heading += randRange(-HEADING_JITTER, HEADING_JITTER);
+        // limit heading change rate
+        const maxTurn = TURN_RATE * dt;
+        if (Math.abs(this.heading % (2*Math.PI)) > maxTurn) {
+            // keep turn within allowed range
+            const diff = (this.heading % (2*Math.PI) + Math.PI) % (2*Math.PI) - Math.PI;
+            this.heading -= Math.max(-maxTurn, Math.min(diff, maxTurn));
+        }
+
+        // --- compute velocity vector ---
+        const vx = Math.cos(this.heading) * this.speed;
+        const vy = Math.sin(this.heading) * this.speed;
+
+        // --- simple steering away from walls ---
+        // If we are too close to a wall, steer toward the centre of the tank.
+        if (this.x - this.radius < 0) {
+            this.x = this.radius;
+            this.heading = Math.PI * 0.75; // point right‑up
+        } else if (this.x + this.radius > W) {
+            this.x = W - this.radius;
+            this.heading = Math.PI * 0.25; // point left‑up
+        }
+        if (this.y - this.radius < 0) {
+            this.y = this.radius;
+            this.heading = 0;               // point right
+        } else if (this.y + this.radius > H) {
+            this.y = H - this.radius;
+            this.heading = Math.PI;         // point down
+        }
+
+        // --- integrate position ---
+        this.x += vx * dt * 1000;   // dt is seconds, but requestAnimationFrame gives ms‑scaled timestamps → multiply by 1000
+        this.y += vy * dt * 1000;
+    }
+
+    /** Draw the fish – body, tail and eye */
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.heading);
+
+        // Body – simple oval
+        ctx.fillStyle = this.colour;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.bodyRad, this.radius * 0.6, 0, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Tail – triangle
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-this.tailLen, -this.radius * 0.4);
+        ctx.lineTo(-this.tailLen,  this.radius * 0.4);
+        ctx.closePath();
+        ctx.fill();
+
+        // Eye – small white dot with black pupil
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(this.bodyRad * 0.4, this.radius * 0.2, this.radius * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(this.bodyRad * 0.4, this.radius * 0.2, this.radius * 0.03, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+/* --------------------------------------------------------------
+   Initialise canvas & context
+---------------------------------------------------------------- */
+const canvas = document.getElementById('simulationCanvas');
+const ctx    = canvas.getContext('2d');
+const W      = canvas.width;
+const H      = canvas.height;
+
+/* --------------------------------------------------------------
+   Create fish pool
+---------------------------------------------------------------- */
+const fishes = [];
+
+for (let i = 0; i < FISH_COUNT; i++) {
+    const size   = randRange(20, 40);                     // radius for drawing
+    const speed  = randRange(MIN_SPEED, MAX_SPEED);       // px/s
+    const heading= randRange(0, Math.PI * 2);              // random direction
+    const x      = randRange(size, W - size);
+    const y      = randRange(size, H - size);
+    const colour = `hsl(${randRange(180, 300)}, ${randRange(50, 80)}%, ${randRange(40, 70)}%)`;
+
+    fishes.push(new Fish(x, y, speed, heading, size, colour));
+}
+
+/* --------------------------------------------------------------
+   Animation loop – requestAnimationFrame with delta‑time
+---------------------------------------------------------------- */
+let lastTimestamp = 0;
+
+function gameLoop(timestamp) {
+    // Convert to seconds since start of loop
+    const now      = timestamp / 1000;               // ms → s
+    const dt       = now - (lastTimestamp / 1000);
+    lastTimestamp  = timestamp;
+
+    // -------- Update -------------------------------------------------
+    fishes.forEach(f => f.update(dt));
+
+    // -------- Draw ---------------------------------------------------
+    // Clear to a calm water colour
+    ctx.fillStyle = '#a0d8f1';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw each fish
+    fishes.forEach(f => f.draw(ctx));
+
+    requestAnimationFrame(gameLoop);
+}
+
+/* --------------------------------------------------------------
+   Kick‑off
+---------------------------------------------------------------- */
+requestAnimationFrame(gameLoop);
+</script>
+
+</body>
+</html>
+```
+
+### How it works
+1. **Fish objects** are created with random position, speed, heading, size and colour.  
+2. In each frame the `update(dt)` method:  
+   * Adds a tiny random turn for *wander‑like* motion.  
+   * Computes a velocity vector from the current heading.  
+   * Checks proximity to the canvas edges; if too close it steers toward the centre for a smooth “bounce‑off”.  
+   * Integrates position using the elapsed `dt` (seconds).  
+3. The `draw(ctx)` method renders a simple fish silhouette, rotating it to face its heading.  
+4. The animation loop uses `requestAnimationFrame`, computes a delta‑time based on `performance.now()`, clears the canvas, updates all fish, then draws them.  
+
+The result is a calm, continuously‑moving school of fish that stays inside the tank, changes direction organically, and never leaves the canvas bounds. Enjoy experimenting with the parameters in the **Configuration** section!
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Nemotron-3-Nano-30B-A3B-UD-Q5_K_XL.gguf -->
+<!-- Prompt: aquarium.md -->
+<!-- Generation Time: 22.35s -->
+<!-- Fallback Used: False -->

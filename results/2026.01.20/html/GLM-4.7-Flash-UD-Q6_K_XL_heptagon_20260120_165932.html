@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bouncing Balls in Spinning Heptagon</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #2c3e50; /* Dark background to make colors pop */
+            font-family: sans-serif;
+            overflow: hidden;
+        }
+
+        canvas {
+            background-color: #000;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI Overlay for context -->
+    <div id="ui-layer">
+        <h1>Spinning Heptagon Simulation</h1>
+        <p>20 Balls | Gravity | Friction | Collision</p>
+        <p>Spin: 360° / 5s</p>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="800"></canvas>
+
+    <script>
+        /**
+         * CONFIGURATION & CONSTANTS
+         */
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 800;
+        const FPS = 60;
+        const SUB_STEPS = 8; // Physics sub-steps for stability
+        
+        // Physics Constants
+        const GRAVITY = 0.15; // Downward acceleration per frame
+        const FRICTION = 0.99; // Air resistance
+        const WALL_DAMPING = 0.75; // Energy loss on wall bounce
+        const BALL_DAMPING = 0.9; // Energy loss on ball-ball bounce
+        const ROTATION_SPEED_DEG = 360 / 5; // Degrees per second
+        const ROTATION_SPEED_RAD = (Math.PI * 2) / (ROTATION_SPEED_DEG * (Math.PI / 180)); // Rad per frame (assuming 60fps roughly)
+        // Note: The prompt says 360 deg per 5 seconds. 
+        // We will calculate delta time based on real frames to be smooth.
+        
+        const COLORS = [
+            "#f8b862", "#f6ad49", "#f39800", "#f08300", "#ec6d51", 
+            "#ee7948", "#ed6d3d", "#ec6800", "#ec6800", "#ee7800", 
+            "#eb6238", "#ea5506", "#ea5506", "#eb6101", "#e49e61", 
+            "#e45e32", "#e17b34", "#dd7a56", "#db8449", "#d66a35"
+        ];
+
+        // Canvas Setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = CANVAS_WIDTH;
+        const H = CANVAS_HEIGHT;
+        const CX = W / 2;
+        const CY = H / 2;
+        
+        // Heptagon Settings
+        const HEPTAGON_RADIUS = 350;
+        const SIDES = 7;
+        let rotationAngle = 0; // Current rotation of the container
+
+        // Spatial Partitioning Grid
+        // Optimization: Only check collisions against balls in the same grid cell
+        class SpatialGrid {
+            constructor(cellSize) {
+                this.cellSize = cellSize;
+                this.grid = new Map();
+            }
+
+            clear() {
+                this.grid.clear();
+            }
+
+            getKey(x, y) {
+                const cx = Math.floor(x / this.cellSize);
+                const cy = Math.floor(y / this.cellSize);
+                return `${cx},${cy}`;
+            }
+
+            getKeyForBall(ball) {
+                return this.getKey(ball.x, ball.y);
+            }
+
+            addToGrid(ball) {
+                const key = this.getKeyForBall(ball);
+                if (!this.grid.has(key)) {
+                    this.grid.set(key, []);
+                }
+                this.grid.get(key).push(ball);
+            }
+
+            getNeighbors(ball) {
+                const key = this.getKeyForBall(ball);
+                const neighbors = new Set();
+                neighbors.add(key);
+
+                // Check 8 surrounding cells (Moore neighborhood)
+                const cx = Math.floor(ball.x / this.cellSize);
+                const cy = Math.floor(ball.y / this.cellSize);
+
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        if (i === 0 && j === 0) continue;
+                        neighbors.add(`${cx + i},${cy + j}`);
+                    }
+                }
+
+                // Gather all unique balls from these cells
+                const results = new Set();
+                for (let key of neighbors) {
+                    if (this.grid.has(key)) {
+                        this.grid.get(key).forEach(ball => {
+                            results.add(ball);
+                        });
+                    }
+                }
+                return Array.from(results);
+            }
+        }
+
+        const grid = new SpatialGrid(100); // Cell size 100px
+
+        /**
+         * MATH HELPERS
+         */
+        function distSq(x1, y1, x2, y2) {
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            return dx * dx + dy * dy;
+        }
+
+        // Rotate a point (x, y) around (cx, cy) by angle
+        function rotatePoint(x, y, cx, cy, angle) {
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            const nx = (cos * (x - cx)) + (sin * (y - cy)) + cx;
+            const ny = (cos * (y - cy)) - (sin * (x - cx)) + cy;
+            return { x: nx, y: ny };
+        }
+
+        // Dot product
+        function dotProduct(v1, v2) {
+            return v1.x * v2.x + v1.y * v2.y;
+        }
+
+        // Vector subtraction
+        function sub(v1, v2) {
+            return { x: v1.x - v2.x, y: v1.y - v2.y };
+        }
+
+        // Vector addition
+        function add(v1, v2) {
+            return { x: v1.x + v2.x, y: v1.y + v2.y };
+        }
+
+        // Vector magnitude
+        function mag(v) {
+            return Math.sqrt(v.x * v.x + v.y * v.y);
+        }
+
+        // Normalize vector
+        function normalize(v) {
+            const m = mag(v);
+            if (m === 0) return { x: 0, y: 0 };
+            return { x: v.x / m, y: v.y / m };
+        }
+
+        // Vector scale
+        function scale(v, s) {
+            return { x: v.x * s, y: v.y * s };
+        }
+
+        // Reflect velocity vector v off normal n
+        function reflect(v, n) {
+            // v - 2 * (v . n) * n
+            const dot = v.x * n.x + v.y * n.y;
+            const rx = v.x - (2 * dot * n.x);
+            const ry = v.y - (2 * dot * n.y);
+            return { x: rx, y: ry };
+        }
+
+        /**
+         * BALL CLASS
+         */
+        class Ball {
+            constructor(id, x, y, radius, color) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 5; // Initial random velocity
+                this.vy = (Math.random() - 0.5) * 5;
+                this.radius = radius;
+                this.color = color;
+                this.mass = 1; // Equal mass for all
+                this.angle = 0; // Rotation of the ball visual
+                this.va = (Math.random() - 0.5) * 0.2; // Angular velocity
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Draw Ball Body
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = "#000";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Draw Number
+                ctx.fillStyle = "#fff";
+                ctx.font = `bold ${this.radius}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(this.id, 0, 1); // +1 y for visual centering
+
+                // Draw a line to show rotation clearly
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, -this.radius * 0.8);
+                ctx.strokeStyle = "rgba(0,0,0,0.3)";
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            update() {
+                // Apply Gravity
+                this.vy += GRAVITY;
+                
+                // Apply Friction
+                this.vx *= FRICTION;
+                this.vy *= FRICTION;
+
+                // Move
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Rotate
+                this.angle += this.va;
+
+                // Simple floor/ceiling/wall clamping to keep them in play if they glitch out
+                // (Optional, but good for robustness)
+                // this.va *= 0.95; // Air resistance on spin
+            }
+        }
+
+        // Global Arrays
+        let balls = [];
+
+        /**
+         * INITIALIZATION
+         */
+        function init() {
+            balls = [];
+            const ballCount = 20;
+            const radius = 15;
+
+            // Create balls in a grid pattern in the center to avoid immediate overlap explosion
+            // or random positions near center
+            for (let i = 0; i < ballCount; i++) {
+                // Start in center with slight random offset
+                const x = CX + (Math.random() - 0.5) * 40;
+                const y = CY + (Math.random() - 0.5) * 40;
+                const color = COLORS[i % COLORS.length];
+                balls.push(new Ball(i + 1, x, y, radius, color));
+            }
+        }
+
+        /**
+         * PHYSICS ENGINE
+         */
+
+        // 1. Update positions and apply forces
+        function updatePhysics() {
+            // Sub-stepping for stability
+            const steps = 4;
+            for (let s = 0; s < steps; s++) {
+                updatePhysicsStep();
+            }
+        }
+
+        function updatePhysicsStep() {
+            // 1.1 Update Ball positions
+            for (let ball of balls) {
+                ball.update();
+            }
+
+            // 1.2 Spatial Partitioning
+            // Clear grid and map balls to it
+            grid.clear();
+            for (let ball of balls) {
+                grid.addToGrid(ball);
+            }
+
+            // 1.3 Check Ball-Ball Collisions
+            for (let ball of balls) {
+                const neighbors = grid.getNeighbors(ball);
+                for (let other of neighbors) {
+                    if (ball === other) continue;
+                    
+                    checkBallCollision(ball, other);
+                }
+            }
+
+            // 1.4 Check Wall Collisions (Heptagon)
+            checkWallCollisions();
+        }
+
+        function checkBallCollision(b1, b2) {
+            const dx = b2.x - b1.x;
+            const dy = b2.y - b1.y;
+            const distSqVal = dx * dx + dy * dy;
+            const minDist = b1.radius + b2.radius;
+
+            if (distSqVal < minDist * minDist) {
+                const dist = Math.sqrt(distSqVal);
+                if (dist === 0) return; // Prevent divide by zero
+
+                // Normalize collision vector
+                const nx = dx / dist;
+                const ny = dy / dist;
+
+                // Positional Correction (prevent sinking)
+                const overlap = minDist - dist;
+                const correction = overlap / 2.0;
+                b1.x -= nx * correction;
+                b1.y -= ny * correction;
+                b2.x += nx * correction;
+                b2.y += ny * correction;
+
+                // Relative Velocity
+                // v1n = dot(v1, n), v2n = dot(v2, n)
+                // We calculate normal velocity at contact point
+                const v1n = b1.vx * nx + b1.vy * ny;
+                const v2n = b2.vx * nx + b2.vy * ny;
+
+                // If moving apart, skip
+                if (v1n - v2n < 0) return;
+
+                // Impulse (Elastic collision)
+                // j = -(1 + e) * v_rel_norm / (1/m1 + 1/m2)
+                // Assuming mass is 1 for both
+                const j = -(1 + BALL_DAMPING) * (v1n - v2n) / 2;
+                
+                // Apply impulse
+                const impulseX = j * nx;
+                const impulseY = j * ny;
+
+                b1.vx += impulseX;
+                b1.vy += impulseY;
+                b2.vx -= impulseX;
+                b2.vy -= impulseY;
+            }
+        }
+
+        function checkWallCollisions() {
+            // Calculate Heptagon vertices based on current rotation
+            const angleStep = (Math.PI * 2) / SIDES;
+            const vertices = [];
+            for (let i = 0; i < SIDES; i++) {
+                const angle = rotationAngle + i * angleStep;
+                // -Math.PI/2 to orient point up initially if needed, but symmetry is fine
+                vertices.push({
+                    x: CX + Math.cos(angle) * HEPTAGON_RADIUS,
+                    y: CY + Math.sin(angle) * HEPTAGON_RADIUS
+                });
+            }
+
+            // Current angular velocity of the wall in rad/frame
+            // 360 deg per 5 seconds. 
+            // If 60fps, 5s = 300 frames. 360/300 = 1.2 deg/frame.
+            // In radians: 2PI / (60 * 5) = 2PI/300.
+            const wallAngularVelocity = (Math.PI * 2) / (60 * 5); 
+
+            for (let ball = balls[0]; ball !== null; ball = balls[balls.indexOf(ball) + 1]) {
+                // Check against all 7 walls
+                // Optimization: We only check the wall the ball is closest to, 
+                // but given the spinning motion, it's safer to check all or use a plane distance check.
+                // We'll check all 7 and take the minimum penetration.
+                
+                let minPenetration = -Infinity;
+                let bestContact = null;
+                let bestNormal = null;
+
+                for (let i = 0; i < SIDES; i++) {
+                    const p1 = vertices[i];
+                    const p2 = vertices[(i + 1) % SIDES];
+
+                    // Vector representing the wall segment
+                    const wallDx = p2.x - p1.x;
+                    const wallDy = p2.y - p1.y;
+                    const wallLen = Math.sqrt(wallDx * wallDy + wallDy * wallDy);
+                    const wallNx = wallDx / wallLen;
+                    const wallNy = wallDy / wallLen;
+
+                    // Vector from p1 to ball
+                    const p1ToBallX = ball.x - p1.x;
+                    const p1ToBallY = ball.y - p1.y;
+
+                    // Project ball onto wall line to find distance
+                    // If we normalize the wall vector, the dot product gives distance from p1
+                    // We want to know the distance from the infinite line, but clamped to segment?
+            // Actually, for a convex container, we check distance to the plane defined by the wall.
+            // If inside, dot product is negative (or positive depending on winding). 
+            // We want distance from the line segment.
+            
+                    const distToLine = (p1ToBallX * wallNx + p1ToBallY * wallNy);
+                    
+                    // Since vertices are clockwise or counter-clockwise, we need consistent normal direction.
+                    // Let's assume vertices are generated Clockwise or Counter-Clockwise.
+                    // Let's calculate normal pointing INWARD.
+                    // Center of heptagon is (CX, CY).
+                    // To check if point is inside, we usually check cross product.
+                    
+                    // Let's use distance from center line for simplicity? No, that's not precise enough for corners.
+                    // Let's use the dot product with the normal pointing INWARD.
+                    // Normal pointing inward is just (-wallNy, wallNx) if vertices are CW?
+                    // Let's trust the dot product with the normal pointing INWARD.
+                    // Vector from P1 to Center:
+                    const toCenterX = CX - p1.x;
+                    const toCenterY = CY - p1.y;
+                    // If (toCenter x wall) < 0, we have a normal pointing in.
+                    const normalX = -wallNy;
+                    const normalY = wallNx;
+                    
+                    if (normalX * toCenterX + normalY * toCenterY < 0) {
+                        // Normal points outward, fix it
+                        normalX = -normalX;
+                        normalY = -normalY;
+                    }
+
+                    // Distance from ball center to wall plane
+                    // We want to see if ball is 'behind' the wall plane.
+                    // Plane equation: N . (P - P1) = 0.
+                    // Distance = N . (Ball - P1).
+                    // If Distance < Radius, we have a hit.
+                    // We also need to make sure the ball is within the segment bounds (dot product with wall vector).
+                    
+                    // Project ball onto wall line to ensure we are inside the segment (not just the infinite line)
+                    const t = (p1ToBallX * wallDx + p1ToBallY * wallDy) / (wallLen * wallLen);
+                    let closestX, closestY;
+                    
+                    if (t < 0) { // Behind P1
+                        closestX = p1.x;
+                        closestY = p1.y;
+                    } else if (t > 1) { // Behind P2
+                        closestX = p2.x;
+                        closestY = p2.y;
+                    } else { // On segment
+                        closestX = p1.x + t * wallDx;
+                        closestY = p1.y + t * wallDy;
+                    }
+
+                    const distX = ball.x - closestX;
+                    const distY = ball.y - closestY;
+                    const distSq = distX * distX + distY * distY;
+                    const dist = Math.sqrt(distSq);
+
+                    // Check collision
+                    if (dist < ball.radius) {
+                        // Calculate penetration depth
+                        // We are inside the container, so distance to wall is positive.
+                        // We want to keep ball inside.
+                        // If distance < radius, it's a hit.
+                        
+                        // Determine normal at collision point
+                        // If ball center is exactly at closest point, use wall normal
+                        if (dist === 0) {
+                            // Rare edge case
+                            ball.x = closestX + normalX * ball.radius;
+                            ball.y = closestY + normalY * ball.radius;
+                            resolveVelocityFromWall(ball, {x: normalX, y: normalY}, closestX, closestY, wallAngularVelocity);
+                        } else {
+                            const normalXVal = distX / dist;
+                            const normalYVal = distY / dist;
+                            // Positional Correction
+                            const overlap = ball.radius - dist;
+                            ball.x += normalXVal * overlap;
+                            ball.y += normalYVal * overlap;
+                            
+                            resolveVelocityFromWall(ball, {x: normalXVal, y: normalYVal}, closestX, closestY, wallAngularVelocity);
+                        }
+                    }
+                }
+            }
+        }
+
+        function resolveVelocityFromWall(ball, normal, contactX, contactY, wallAngularVel) {
+            // Velocity of the wall at the contact point
+            // V_wall = omega x r
+            // r is vector from center of rotation (0,0) to contactPoint
+            const rX = contactX - CX;
+            const rY = contactY - CY;
+            
+            // Cross product for 2D: (-omega * rY, omega * rX)
+            // This is the tangential velocity of the wall at that point
+            const wallVx = -wallAngularVel * rY;
+            const wallVy = wallAngularVel * rX;
+
+            // Relative velocity
+            const vRelX = ball.vx - wallVx;
+            const vRelY = ball.vy - wallVy;
+
+            // Velocity along normal
+            const velAlongNormal = vRelX * normal.x + vRelY * normal.y;
+
+            // Do not resolve if moving away
+            if (velAlongNormal > 0) return;
+
+            // Restitution (bounciness)
+            const e = WALL_DAMPING;
+
+            // Impulse scalar
+            let j = -(1 + e) * velAlongNormal;
+            j /= 1 / ball.mass; // mass of ball is 1
+
+            // Apply impulse
+            // We only reflect the component of velocity relative to the wall's normal
+            // But we also need to account for the wall's velocity imparting energy.
+            // However, for simple wall collision with spin, reflecting V_rel is standard.
+            
+            // New velocity = Old Velocity - (1 + e) * (V_rel . N) * N
+            // Actually, let's just reflect the ball's velocity vector relative to the wall normal
+            // and then add a fraction of the wall's tangential velocity?
+            
+            // Simple reflection:
+            let impulseX = j * normal.x;
+            let impulseY = j * normal.y;
+            
+            ball.vx -= impulseX;
+            ball.vy -= impulseY;
+
+            // Friction (Tangential force)
+            // Tangent vector
+            const tx = -normal.y;
+            const ty = normal.x;
+            const vMag = Math.sqrt(vRelX * vRelX + vRelY * vRelY);
+            
+            if (vMag > 0.0001) {
+                // Friction impulse
+                const friction = 0.1; // small friction factor
+                const frictionImpulse = -friction * velAlongNormal; // Simplified
+                ball.vx += tx * frictionImpulse * 0.1;
+                ball.vy += ty * frictionImpulse * 0.1;
+                
+                // Spin the ball based on friction
+                ball.va = -frictionImpulse * 0.05; 
+            }
+            
+            // Damping on spin
+            ball.va *= 0.95;
+        }
+
+        /**
+         * RENDERING
+         */
+        function draw() {
+            // Clear background
+            ctx.fillStyle = "#2c3e50";
+            ctx.fillRect(0, 0, W, H);
+
+            // Draw Heptagon
+            drawHeptagon();
+
+            // Draw Balls
+            for (let ball of balls) {
+                ball.draw(ctx);
+            }
+        }
+
+        function drawHeptagon() {
+            const angleStep = (Math.PI * 2) / SIDES;
+            ctx.beginPath();
+            
+            for (let i = 0; i <= SIDES; i++) {
+                // Update global rotation for this frame's logic
+                // rotationAngle += 0.01; 
+            }
+
+            // Re-calculate vertices for drawing
+            const angleStepCurrent = (Math.PI * 2) / SIDES;
+            // We use current rotationAngle
+            // Ensure rotation is continuous
+             // We'll calculate vertices in a loop
+        }
+
+        // Wrapper to draw heptagon based on current state
+        function renderHeptagon() {
+            // Rotation speed: 360 deg per 5 seconds.
+            // dt is roughly 1/60s.
+            // We increment rotation based on time delta or fixed steps.
+            // For smooth animation, we increment by a small amount per frame.
+            
+            // To get 360 degrees per 5 seconds:
+            // 360 deg / 5 sec = 72 deg/sec.
+            // At 60fps, that is 1.2 degrees per frame.
+            const rotationStep = 1.2 * (Math.PI / 180); 
+            rotationAngle += rotationStep;
+
+            // Recalculate vertices
+            const angleStep = (Math.PI * 2) / SIDES;
+            let vertices = [];
+            for (let i = 0; i < SIDES; i++) {
+                const angle = rotationAngle + (i * angleStep);
+                vertices.push({
+                    x: CX + Math.cos(angle) * HEPTAGON_RADIUS,
+                    y: CY + Math.sin(angle) * HEPTAGON_RADIUS
+                });
+            }
+
+            // Draw
+            ctx.beginPath();
+            ctx.moveTo(vertices[0].x, vertices[0].y);
+            for (let i = 1; i < vertices.length; i++) {
+                ctx.lineTo(vertices[i].x, vertices[i].y);
+            }
+            ctx.closePath();
+            
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 5;
+            ctx.stroke();
+
+            // Draw center pivot point
+            // ctx.beginPath();
+            // ctx.arc(CX, CY, 5, 0, Math.PI*2);
+            // ctx.fillStyle = "red";
+            // ctx.fill();
+        }
+
+
+        /**
+         * MAIN LOOP
+         */
+        function gameLoop() {
+            // 1. Update Physics
+            updatePhysics();
+
+            // 2. Render
+            // We use clearRect logic inside draw or CSS background?
+            // CSS background is faster, but fillStyle is safer for transparency.
+            // Let's clear canvas manually to be safe.
+            ctx.clearRect(0, 0, W, H);
+            
+            // Draw container
+            renderHeptagon();
+
+            // Draw Balls
+            for (let ball of balls) {
+                ball.draw(ctx);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize and Start
+        init();
+        requestAnimationFrame(gameLoop);
+
+    </script>
+</body>
+</html>

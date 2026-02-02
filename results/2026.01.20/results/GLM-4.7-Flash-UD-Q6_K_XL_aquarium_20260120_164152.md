@@ -1,0 +1,357 @@
+Here is the complete, self-contained HTML file for the **Autonomous Aquarium Simulation**.
+
+I have implemented a `Fish` class with autonomous wandering behaviors, smooth boundary handling, and procedural tail animations. I also included a `Bubble` system to add depth to the environment. The code uses `requestAnimationFrame` with delta time calculation to ensure smooth animation regardless of the frame rate.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Aquarium Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #006994; /* Deep sea blue */
+            font-family: sans-serif;
+        }
+
+        .canvas-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            background: linear-gradient(to bottom, #4facfe 0%, #00f2fe 100%); /* Light water gradient */
+            cursor: crosshair;
+        }
+        
+        /* Overlay for instructions */
+        #ui-layer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="canvas-container">
+        <canvas id="simulationCanvas" width="800" height="600"></canvas>
+        <div id="ui-layer">
+            <h2>Aquarium Simulation</h2>
+            <p>Autonomous Boids-style movement</p>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * AQUARIUM SIMULATION
+         * 
+         * Architecture:
+         * 1. Utility Functions: Random range, distance, color generation.
+         * 2. Classes:
+     *      - Bubble: Background ambient particles.
+     *      - Fish: Main autonomous entity with movement, drawing, and state management.
+     * 3. Main Loop: Manages the animation cycle and delta time.
+         */
+
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Configuration ---
+        const CONFIG = {
+            fishCount: 18,
+            bubbleCount: 30,
+            boundaryPadding: 50, // Pixels from edge to start turning
+            turnFactor: 0.05,    // How fast they turn (0.0 to 1.0)
+            baseSpeed: 100,      // Pixels per second
+            speedVar: 40,        // Random speed variation
+            turnVar: 0.5,        // Random turning variation
+            tailWiggleSpeed: 0.15 // How fast the tail moves
+        };
+
+        // Global state
+        let lastTime = 0;
+        let time = 0; // Global time accumulator for sine waves
+        const fishArray = [];
+        const bubbleArray = [];
+
+        // --- Utility Functions ---
+
+        // Linear interpolation for smooth values
+        function lerp(start, end, t) {
+            return start * (1 - t) + end * t;
+        }
+
+        // Random integer between min and max
+        function randomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1) + min);
+        }
+
+        // Generate a random pastel color
+        function getRandomColor() {
+            const hue = randomInt(0, 360);
+            const sat = randomInt(60, 100);
+            const light = randomInt(50, 75);
+            const alpha = 0.8 + Math.random() * 0.2; // Slight transparency variation
+            return `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+        }
+
+        // Calculate distance between two points
+        function getDist(x1, y1, x2, y2) {
+            return Math.hypot(x2 - x1, y2 - y1);
+        }
+
+        // --- Classes ---
+
+        class Bubble {
+            constructor() {
+                this.reset(true);
+            }
+
+            reset(initial = false) {
+                this.x = Math.random() * W;
+                this.y = initial ? Math.random() * H : H + 10;
+                this.size = Math.random() * 3 + 2;
+                this.speed = Math.random() * 20 + 20;
+                this.wobble = Math.random() * Math.PI * 2;
+                this.wobbleSpeed = Math.random() * 0.1 + 0.05;
+            }
+
+            update(dt) {
+                this.y -= this.speed * dt;
+                this.wobble += this.wobbleSpeed;
+                this.x += Math.sin(this.wobble) * 0.5; // Slight side-to-side drift
+
+                if (this.y < -10) {
+                    this.reset();
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class Fish {
+            constructor() {
+                this.reset(true);
+            }
+
+            reset(initial = false) {
+                // Position
+                this.x = Math.random() * (W - 100) + 50;
+                this.y = Math.random() * (H - 100) + 50;
+                
+                // Movement properties
+                this.angle = (Math.PI * 2) * Math.random(); // Random angle
+                this.targetAngle = this.angle;
+                
+                // Randomize speed slightly per fish
+                this.speedMult = (Math.random() * CONFIG.speedVar) + (CONFIG.baseSpeed * 0.5);
+                
+                // Appearance
+                this.size = randomInt(15, 25); // Size of the fish
+                this.color = getRandomColor();
+                this.tailAngle = 0;
+                this.tailPhase = Math.random() * Math.PI * 2; // For independent tail animation
+            }
+
+            update(dt) {
+                // 1. Autonomous Wandering Logic
+                // Slowly rotate the target angle to make the fish change direction naturally
+                let targetTurn = (Math.random() - 0.5) * CONFIG.turnVar;
+                
+                // If too close to edge, turn away from it
+                const margin = 50;
+                const distToRight = W - margin - this.x;
+                const distToLeft = this.x - margin;
+                const distToBottom = H - margin - this.y;
+                const distToTop = this.y - margin;
+
+                if (distToRight < 100) this.targetAngle = 0; // Turn left
+                else if (distToLeft < 100) this.targetAngle = Math.PI; // Turn right
+                else if (distToBottom < 100) this.targetAngle = Math.PI * 0.5; // Turn up
+                else if (distToTop < 100) this.targetAngle = -Math.PI * 0.5; // Turn down
+                else {
+                    // Random wandering
+                    if (Math.random() < 0.05) { // 5% chance per frame to change mind
+                        this.targetAngle += (Math.random() - 0.5) * 2;
+                    }
+                }
+
+                // Smooth rotation (Linear Interpolation)
+                // We normalize the angle difference to handle the 0 -> 2PI wrap-around correctly
+                let diff = this.targetAngle - this.angle;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                this.angle += diff * 2 * dt; // 2.0 is the turn speed factor
+
+                // Calculate velocity vector
+                const vx = Math.cos(this.angle) * this.speedMult;
+                const vy = Math.sin(this.angle) * this.speedMult;
+
+                // Update position
+                this.x += vx * dt;
+                this.y += vy * dt;
+
+                // Boundary Wrapping (Invisible walls)
+                if (this.x > W + 50) this.x = -50;
+                if (this.x < -50) this.x = W + 50;
+                if (this.y > H + 50) this.y = -50;
+                if (this.y < -50) this.y = H + 50;
+
+                // Animate tail
+                this.tailPhase += CONFIG.tailWiggleSpeed;
+                // Wiggle amplitude decreases slightly when turning
+                this.tailAngle = Math.sin(this.tailPhase) * 0.5; 
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Flip the fish horizontally if moving left
+                const facingRight = (Math.cos(this.angle) >= 0);
+                if (!facingRight) {
+                    ctx.scale(-1, 1);
+                }
+
+                ctx.rotate(this.angle);
+
+                // Draw Body (Oval)
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                // Scale the fish by size
+                // We scale Y by 0.6 to make it an ellipse
+                ctx.ellipse(0, 0, Math.abs(this.size), Math.abs(this.size) * 0.6, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw Tail (Triangle with wiggle)
+                const tailWiggleAmount = Math.sin(this.tailPhase) * 0.5;
+                const tailSize = this.size * 0.6;
+                
+                ctx.save();
+                ctx.translate(-this.size * 0.5, 0); // Move to back of body
+                ctx.rotate(tailWiggleAmount); // Rotate tail based on phase
+                ctx.fillStyle = this.color; // Same color as body
+                ctx.globalAlpha = 0.8;
+                
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(-tailSize, -tailSize * 0.5);
+                ctx.lineTo(-tailSize, tailSize * 0.5);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+
+                // Draw Eye
+                ctx.fillStyle = "white";
+                ctx.beginPath();
+                ctx.arc(this.size * 0.4, -this.size * 0.15, this.size * 0.2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = "black";
+                ctx.beginPath();
+                ctx.arc(this.size * 0.5, -this.size * 0.15, this.size * 0.08, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // --- Initialization ---
+
+        function init() {
+            // Create Fish
+            for (let i = 0; i < CONFIG.fishCount; i++) {
+                fishArray.push(new Fish());
+            }
+
+            // Create Bubbles
+            for (let i = 0; i < CONFIG.bubbleCount; i++) {
+                bubbleArray.push(new Bubble());
+            }
+        }
+
+        // --- Main Loop ---
+
+        function gameLoop(timestamp) {
+            // Calculate Delta Time in seconds
+            if (!lastTime) lastTime = timestamp;
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Cap dt to prevent huge jumps if tab is inactive
+            if (dt > 0.1) {
+                requestAnimationFrame(gameLoop);
+                return; 
+            }
+
+            time += dt;
+
+            // 1. Clear Canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // 2. Draw Background Elements (Rocks/Grass)
+            // Simple dark silhouettes at the bottom
+            drawBackgroundDetails();
+
+            // 3. Update & Draw Bubbles
+            bubbleArray.forEach(bubble => {
+                bubble.update(dt);
+                bubble.draw(ctx);
+            });
+
+            // 4. Update & Draw Fish
+            // Sort fish by Y position for simple depth sorting (painter's algorithm)
+            fishArray.sort((a, b) => a.y - b.y);
+
+            fishArray.forEach(fish => {
+                fish.update(dt);
+                fish.draw(ctx);
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function drawBackgroundDetails() {
+            // Draw some subtle "rocks" at the bottom
+            ctx.fillStyle = "rgba(0, 50, 100, 0.3)";
+            ctx.beginPath();
+            ctx.ellipse(W/2, H, W, 100, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // --- Start ---
+        init();
+        requestAnimationFrame(gameLoop);
+
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: GLM-4.7-Flash-UD-Q6_K_XL.gguf -->
+<!-- Prompt: aquarium.md -->
+<!-- Generation Time: 86.27s -->
+<!-- Fallback Used: False -->
