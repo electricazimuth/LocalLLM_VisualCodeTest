@@ -2,8 +2,8 @@ import re
 from pathlib import Path
 
 # --- Configuration ---
-SOURCE_FOLDER_NAME = "results/2026.01.26/results"  # Name of the folder containing .md files
-OUTPUT_FOLDER_NAME = "results/2026.01.26/html"     # Name of the folder to save extracted HTML files
+SOURCE_FOLDER_NAME = "results/2026.02.04/results"  # Name of the folder containing .md files
+OUTPUT_FOLDER_NAME = "results/2026.02.04/html"     # Name of the folder to save extracted HTML files
 
 # Define the closing tag pattern separately for clarity and robustness
 # Allows optional whitespace before the closing >

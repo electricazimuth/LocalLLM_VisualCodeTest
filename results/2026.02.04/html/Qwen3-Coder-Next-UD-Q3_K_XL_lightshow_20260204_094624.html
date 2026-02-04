@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Psychedelic Ray Marching Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: monospace;}
+        canvas { display: block; width: 100vw; height: 100vh; }
+        
+        /* Overlay for instructions/status */
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            pointer-events: none;
+            text-shadow: 0 0 5px black;
+            opacity: 0.8;
+        }
+        h1 { margin: 0; font-size: 1.5rem; color: #0ff; text-transform: uppercase; letter-spacing: 3px; }
+        p { margin: 5px 0 0 0; font-size: 0.9rem; color: #aaa; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <h1>Liquid Light Simulation</h1>
+        <p>Ray Marching • SDF Smooth Minimum • Procedural Metaballs</p>
+        <p>FPS: <span id="fps">60</span></p>
+    </div>
+
+    <canvas id="glCanvas"></canvas>
+
+<script>
+/**
+ * WebGL Setup and Shader Compilation
+ */
+const canvas = document.getElementById('glCanvas');
+const gl = canvas.getContext('webgl', { alpha: false, antialias: false });
+
+if (!gl) {
+    alert('WebGL not supported on this browser.');
+    throw new Error('WebGL not supported');
+}
+
+// Vertex Shader: Sets up the full-screen quad
+const vsSource = `
+    attribute vec2 a_position;
+    void main() {
+        gl_Position = vec4(a_position, 0.0, 1.0);
+    }
+`;
+
+// Fragment Shader: The core logic
+const fsSource = `
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    uniform vec2 u_resolution;
+    uniform float u_time;
+
+    // --- Noise Functions (Simplex-style Pseudo-Random) ---
+    // Simple hash function for noise generation
+    float random(vec2 st) {
+        return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+    }
+
+    // 2D Noise for texture details
+    float noise(vec2 st) {
+        vec2 i = floor(st);
+        vec2 f = fract(st);
+        float a = random(i);
+        float b = random(i + vec2(1.0, 0.0));
+        float c = random(i + vec2(0.0, 1.0));
+        float d = random(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(a, b, u.x) +
+               (c - a) * u.y * (1.0 - u.x) +
+               (d - b) * u.x * u.y;
+    }
+
+    // Fractal Brownian Motion for detailed texture
+    float fbm(vec2 st) {
+        float value = 0.0;
+        float amplitude = 0.5;
+        float frequency = 0.0;
+        for (int i = 0; i < 5; i++) {
+            value += amplitude * noise(st);
+            st *= 2.0;
+            amplitude *= 0.5;
+        }
+        return value;
+    }
+
+    // --- SDF Functions ---
+
+    // Sphere SDF
+    float sdSphere(vec3 p, float r) {
+        return length(p) - r;
+    }
+
+    // Smooth Minimum (Soft Union) for Metaballs
+    // k controls the softness. Smaller k = harder edges, Larger k = more merging
+    float smin(float a, float b, float k) {
+        // Exponential smooth min
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        // Alternative polynomial smooth min (stable and fast)
+        // return min(a, b) - k * h * (1.0 - h); 
+        
+        // Using the exponential definition for the "glowing" liquid look
+        return -log(exp(-k * a) + exp(-k * b)) / k;
+    }
+
+    // Scene SDF: Combines multiple metaballs
+    float mapScene(vec3 p, float t) {
+        float d = 100.0;
+        
+        // Define 4 Metaballs
+        // We animate positions using sine and cosine of time
+        
+        // Metaball 1: The "Leader"
+        vec3 p1 = p - vec3(
+            sin(t * 0.8) * 1.5, 
+            cos(t * 1.2) * 1.5, 
+            sin(t * 0.5) * 1.0
+        );
+        float d1 = sdSphere(p1, 1.2);
+
+        // Metaball 2: Orbiting
+        vec3 p2 = p - vec3(
+            cos(t * 0.5) * 2.0, 
+            sin(t * 0.3) * 0.5, 
+            sin(t * 0.8) * 1.0
+        );
+        float d2 = sdSphere(p2, 0.9);
+
+        // Metaball 3: Spinning Ring/Group member
+        vec3 p3 = p - vec3(
+            sin(t * 1.5 + 2.0) * 1.8, 
+            sin(t * 0.4) * 1.5, 
+            cos(t * 0.6) * 2.0
+        );
+        float d3 = sdSphere(p3, 1.0);
+
+        // Metaball 4: Fast jittery one
+        vec3 p4 = p - vec3(
+            sin(t * 4.0) * 0.8, 
+            cos(t * 5.0) * 0.8, 
+            sin(t * 2.0) * 0.8
+        );
+        float d4 = sdSphere(p4, 0.7);
+
+        // Combine them using Smooth Minimum
+        // We chain smin: combine 1&2, then 3&4, then combine those results
+        float k = 2.5; // Softness factor
+        
+        float d12 = smin(d1, d2, k);
+        float d34 = smin(d3, d4, k);
+        float dTotal = smin(d12, d34, k);
+
+        return dTotal;
+    }
+
+    // Ray Marching Loop
+    float rayMarch(vec3 ro, vec3 rd) {
+        float dOrigin = 0.0;
+        float dMax = 15.0; // Max render distance
+        float t = 0.0;     // Total distance traveled
+        
+        for (int i = 0; i < 64; i++) {
+            vec3 p = ro + rd * t;
+            float d = mapScene(p, u_time);
+            
+            if (d < 0.01) {
+                return t; // Hit!
+            }
+            
+            t += d;
+            if (t > dMax) {
+                return -1.0; // Missed
+            }
+        }
+        return -1.0;
+    }
+
+    // Calculate Normal by sampling gradient of SDF
+    vec3 calcNormal(vec3 p) {
+        vec2 eps = vec2(0.001, 0.0);
+        return normalize(vec3(
+            mapScene(p + eps.xyy, u_time) - mapScene(p - eps.xyy, u_time),
+            mapScene(p + eps.yxy, u_time) - mapScene(p - eps.yxy, u_time),
+            mapScene(p + eps.yyx, u_time) - mapScene(p - eps.yyx, u_time)
+        ));
+    }
+
+    // --- Coloring / Shading ---
+    
+    // Psychedelic Palette function
+    vec3 getPsychedelicColor(vec3 p, vec3 n, float t) {
+        
+        // Base color based on position and time
+        vec3 colorBase = 0.5 + 0.5 * cos(u_time + p.xyx + vec3(0.0, 2.0, 4.0));
+        
+        // Add noise texture to the surface for detail
+        float detail = fbm(p * 3.0 + vec2(t * 0.1));
+        colorBase += (detail * 0.5);
+        
+        // Specular highlight (Phong)
+        vec3 lightDir = normalize(vec3(1.0, 2.0, 3.0));
+        float diff = max(dot(n, lightDir), 0.0);
+        float spec = pow(max(dot(reflect(-lightDir, n), -p), 0.0), 32.0);
+        
+        // Combine
+        vec3 finalColor = colorBase * diff + vec3(spec);
+        
+        // Add some neon glow to the whole thing
+        finalColor += vec3(0.1, 0.3, 0.8) * (1.0 - exp(-length(p) * 0.5));
+        
+        return finalColor;
+    }
+
+    void main() {
+        // Normalize pixel coordinates (from 0 to 1)
+        // Correct aspect ratio
+        vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
+        
+        // Camera Setup
+        vec3 ro = vec3(0.0, 0.0, 5.0); // Ray origin (Camera position)
+        vec3 rd = normalize(vec3(uv, -1.0)); // Ray direction
+        
+        // Ray Marching
+        float t = rayMarch(ro, rd);
+        
+        vec3 finalColor = vec3(0.0); // Background (Black/Dark)
+        
+        if (t > 0.0) {
+            vec3 hitPoint = ro + rd * t;
+            vec3 normal = calcNormal(hitPoint);
+            
+            // Calculate Color
+            finalColor = getPsychedelicColor(hitPoint, normal, t);
+            
+            // Simple Fog/Atmosphere effect
+            float fog = exp(-t * 0.3);
+            finalColor = mix(vec3(0.05, 0.0, 0.1), finalColor, fog);
+        } else {
+            // Deep space background color
+            finalColor = vec3(0.02, 0.0, 0.05);
+        }
+
+        // Apply Gamma Correction for better display
+        finalColor = pow(finalColor, vec3(0.4545));
+        
+        gl_FragColor = vec4(finalColor, 1.0);
+    }
+`;
+
+// --- Helper Functions ---
+
+function createShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+function createProgram(gl, vertexShader, fragmentShader) {
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error(gl.getProgramInfoLog(program));
+        gl.deleteProgram(program);
+        return null;
+    }
+    return program;
+}
+
+// --- Initialization ---
+
+const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+const program = createProgram(gl, vertexShader, fragmentShader);
+
+gl.useProgram(program);
+
+// Setup Full Screen Quad (Two triangles)
+const positionBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+// Positions: (-1, -1), (1, -1), (-1, 2), (-1, 2), (1, -1), (1, 2)
+// Simplified: Just a big triangle covering the clip space, or standard quad
+const positions = new Float32Array([
+    -1.0, -1.0,
+     1.0, -1.0,
+    -1.0,  1.0,
+    -1.0,  1.0,
+     1.0, -1.0,
+     1.0,  1.0,
+]);
+gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+const positionLocation = gl.getAttribLocation(program, "a_position");
+gl.enableVertexAttribArray(positionLocation);
+gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+// Uniform Locations
+const resolutionLoc = gl.getUniformLocation(program, "u_resolution");
+const timeLoc = gl.getUniformLocation(program, "u_time");
+
+// --- Animation Loop ---
+
+let lastTime = 0;
+let frameCount = 0;
+let lastFpsTime = 0;
+
+function render(time) {
+    // Resize canvas if window size changed
+    if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+
+    // Calculate Delta Time / FPS
+    const dt = time - lastTime;
+    lastTime = time;
+    
+    frameCount++;
+    if (time - lastFpsTime >= 1000) {
+        document.getElementById('fps').innerText = frameCount;
+        frameCount = 0;
+        lastFpsTime = time;
+    }
+
+    // Update Uniforms
+    // Convert time to seconds
+    const seconds = time * 0.001;
+    
+    gl.uniform2f(resolutionLoc, canvas.width, canvas.height);
+    gl.uniform1f(timeLoc, seconds);
+
+    // Draw
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    requestAnimationFrame(render);
+}
+
+// Start
+requestAnimationFrame(render);
+
+</script>
+
+    <!-- Developer Notes -->
+    <section id="notes" style="display:none;">
+        <h3>Implementation Details</h3>
+        <ul>
+            <li><strong>Ray Marching:</strong> Uses a fixed step loop (64 iterations) with adaptive step sizing based on the SDF output. This is more efficient than fixed-step ray casting.</li>
+            <li><strong>SDF Combination:</strong> The `smin` function implements a smooth minimum (soft union) using exponential weighting. This creates the liquid, merging effect where metaballs behave like droplets of water.</li>
+            <li><strong>Coloring:</strong> Colors are generated procedurally using trigonometric functions (cos/sin) based on hit position and time to create the "60s psychedelic" neon palette. Fractal Brownian Motion (FBM) adds surface noise for texture.</li>
+            <li><strong>Lighting:</strong> A simple Phong lighting model is used, calculating normals via gradient sampling of the SDF. Fog is added to create depth.</li>
+            <li><strong>Performance:</strong> Optimized for performance by using `highp` only where necessary and keeping noise functions relatively lightweight.</li>
+        </ul>
+    </section>
+</body>
+</html>

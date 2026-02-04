@@ -1,0 +1,399 @@
+Here is the complete, single-file solution. It includes a spatial hashing grid optimization to maintain performance with 50+ balls, a robust physics engine for elastic collisions, and proper energy damping.
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bouncing Balls Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #f0f0f0; 
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        canvas { 
+            border: 2px solid #333; 
+            background-color: #ffffff; 
+            display: block; 
+            margin: 20px auto; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #ui-container {
+            text-align: center;
+            background: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 10px;
+        }
+        .stats { font-size: 14px; color: #555; margin: 5px 0; }
+        button { 
+            padding: 8px 16px; 
+            cursor: pointer; 
+            background-color: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div id="ui-container">
+        <h2>Bouncing Balls Physics</h2>
+        <div class="stats">
+            Balls: <span id="ballCount">50</span> | 
+            FPS: <span id="fpsCounter">0</span> | 
+            Interactions: <span id="interactionCount">0</span>
+        </div>
+        <button id="resetBtn">Reset Simulation</button>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <section id="notes">
+        <p><strong>Implementation Notes:</strong></p>
+        <ul>
+            <li><strong>Spatial Partitioning (Grid):</strong> To handle O(N^2) collision checks efficiently, the canvas is divided into a grid. Balls are only checked against others in their own cell and immediate neighbors.</li>
+            <li><strong>Physics:</strong> Implements gravity (9.8 pixels/s^2 scaled), coefficient of restitution (0.85 for walls, 0.9 for balls), and friction.</li>
+            <li><strong>Collision Resolution:</strong> Uses impulse-based resolution with position correction to prevent balls from sticking together or tunneling through walls.</li>
+            <li><strong>Mass:</strong> Mass is calculated as proportional to radius (2D approximation) to give larger balls more momentum.</li>
+        </ul>
+    </section>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Configuration ---
+        const CONFIG = {
+            ballCount: 50,
+            gravity: 0.4,          // Vertical acceleration per frame
+            friction: 0.99,        // Air resistance
+            wallDamping: 0.85,     // Energy loss on wall hit
+            ballDamping: 0.90,     // Energy loss on ball hit
+            minRadius: 10,
+            maxRadius: 25,
+            maxSpeed: 12           // Cap speed to prevent tunneling
+        };
+
+        // --- Spatial Hash Grid for Optimization ---
+        // Divides the canvas into cells to reduce collision checks from O(N^2) to O(N)
+        class Grid {
+            constructor(width, height, cellSize) {
+                this.cellSize = cellSize; // Should be roughly 2x max ball radius
+                this.cols = Math.ceil(width / cellSize);
+                this.rows = Math.ceil(height / cellSize);
+                this.cells = new Map();
+            }
+
+            reset() {
+                this.cells.clear();
+            }
+
+            getCellKey(x, y) {
+                const col = Math.floor(x / this.cellSize);
+                const row = Math.floor(y / this.cellSize);
+                return `${col},${row}`;
+            }
+
+            add(ball) {
+                const key = this.getCellKey(ball.x, ball.y);
+                if (!this.cells.has(key)) {
+                    this.cells.set(key, []);
+                }
+                this.cells.get(key).push(ball);
+            }
+
+            // Returns unique neighbors to check against
+            getNeighbors(ball) {
+                const neighbors = [];
+                const ballCol = Math.floor(ball.x / this.cellSize);
+                const ballRow = Math.floor(ball.y / this.cellSize);
+
+                // Check 3x3 grid around the ball
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const key = `${ballCol + i},${ballRow + j}`;
+                        if (this.cells.has(key)) {
+                            const cellBalls = this.cells.get(key);
+                            for (let b of cellBalls) {
+                                // Avoid checking self
+                                if (b !== ball) {
+                                    neighbors.push(b);
+                                }
+                            }
+                        }
+                    }
+                }
+                return neighbors;
+            }
+        }
+
+        // --- Ball Class ---
+        class Ball {
+            constructor(x, y, r, color) {
+                this.x = x;
+                this.y = y;
+                this.r = r;
+                this.color = color;
+                
+                // Mass is proportional to area (r^2) in 3D, or circumference (r) in 2D simulation.
+                // Using r^2 gives more realistic momentum for larger balls.
+                this.mass = r * r; 
+                
+                // Random velocity
+                this.vx = (Math.random() - 0.5) * 10;
+                this.vy = (Math.random() - 0.5) * 10;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = "#333";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.closePath();
+
+                // Optional: Draw velocity vector for debugging
+                /*
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.x + this.vx * 2, this.y + this.vy * 2);
+                ctx.strokeStyle = "rgba(255,255,255,0.5)";
+                ctx.stroke();
+                */
+            }
+
+            update() {
+                // Apply Gravity
+                this.vy += CONFIG.gravity;
+
+                // Apply Air Friction
+                this.vx *= CONFIG.friction;
+                this.vy *= CONFIG.friction;
+
+                // Update Position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Speed Capping (Prevents tunneling through walls at high speeds)
+                const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                if (speed > CONFIG.maxSpeed) {
+                    const scale = CONFIG.maxSpeed / speed;
+                    this.vx *= scale;
+                    this.vy *= scale;
+                }
+            }
+
+            checkWallCollision() {
+                let collided = false;
+
+                // Right Wall
+                if (this.x + this.r > W) {
+                    this.x = W - this.r;
+                    this.vx = -this.vx * CONFIG.wallDamping;
+                    collided = true;
+                }
+                // Left Wall
+                else if (this.x - this.r < 0) {
+                    this.x = this.r;
+                    this.vx = -this.vx * CONFIG.wallDamping;
+                    collided = true;
+                }
+
+                // Floor
+                if (this.y + this.r > H) {
+                    this.y = H - this.r;
+                    this.vy = -this.vy * CONFIG.wallDamping;
+                    collided = true;
+                }
+                // Ceiling
+                else if (this.y - this.r < 0) {
+                    this.y = this.r;
+                    this.vy = -this.vy * CONFIG.wallDamping;
+                    collided = true;
+                }
+                
+                // Floor Friction (stops them sliding forever)
+                if (this.y >= H - this.r - 1) {
+                    this.vx *= 0.98;
+                }
+
+                return collided;
+            }
+        }
+
+        // --- Global State ---
+        let balls = [];
+        let grid;
+        let lastTime = 0;
+        let frameCount = 0;
+        let lastFpsTime = 0;
+        let interactions = 0;
+
+        // --- Initialization ---
+        function init() {
+            balls = [];
+            const cellSize = CONFIG.maxRadius * 2; // Grid cell size
+            grid = new Grid(W, H, cellSize);
+
+            for (let i = 0; i < CONFIG.ballCount; i++) {
+                let radius = CONFIG.minRadius + Math.random() * (CONFIG.maxRadius - CONFIG.minRadius);
+                let x, y, overlapping;
+                
+                // Try to place ball without overlap (simple retry loop)
+                let attempts = 0;
+                do {
+                    overlapping = false;
+                    x = radius + Math.random() * (W - radius * 2);
+                    y = radius + Math.random() * (H * 0.5); // Keep them in top half initially
+                    attempts++;
+
+                    for (let ball of balls) {
+                        const dx = x - ball.x;
+                        const dy = y - ball.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if (dist < radius + ball.r) {
+                            overlapping = true;
+                            break;
+                        }
+                    }
+                } while (overlapping && attempts < 50); // Stop trying after 50 attempts to prevent freeze
+
+                // Generate Color
+                const hue = Math.floor(Math.random() * 360);
+                const saturation = 70;
+                const lightness = 50;
+                const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+
+                balls.push(new Ball(x, y, radius, color));
+            }
+        }
+
+        // --- Physics Engine: Ball-to-Ball Collision ---
+        function resolveCollisions() {
+            interactions = 0;
+            grid.reset();
+
+            // 1. Populate Grid
+            balls.forEach(ball => grid.add(ball));
+
+            // 2. Check Neighbors
+            balls.forEach(ball => {
+                const neighbors = grid.getNeighbors(ball);
+                
+                for (let other of neighbors) {
+                    const dx = other.x - ball.x;
+                    const dy = other.y - ball.y;
+                    const distSq = dx*dx + dy*dy;
+                    const minDist = ball.r + other.r;
+
+                    // Collision Detected
+                    if (distSq < minDist * minDist) {
+                        interactions++;
+                        const dist = Math.sqrt(distSq);
+
+                        // A. Position Correction (Static Resolution)
+                        // Move balls apart so they don't overlap
+                        const overlap = minDist - dist;
+                        // Move direction vector
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+
+                        // Distribute overlap based on mass (lighter moves more)
+                        const totalMass = ball.mass + other.mass;
+                        const m1Ratio = other.mass / totalMass;
+                        const m2Ratio = ball.mass / totalMass;
+
+                        // Correct positions
+                        ball.x -= nx * overlap * m1Ratio;
+                        ball.y -= ny * overlap * m1Ratio;
+                        other.x += nx * overlap * m2Ratio;
+                        other.y += ny * overlap * m2Ratio;
+
+                        // B. Velocity Resolution (Dynamic Resolution)
+                        // Relative velocity
+                        const rvx = other.vx - ball.vx;
+                        const rvy = other.vy - ball.vy;
+
+                        // Velocity along normal
+                        const velAlongNormal = rvx * nx + rvy * ny;
+
+                        // Do not resolve if velocities are separating
+                        if (velAlongNormal > 0) continue;
+
+                        // Impulse scalar
+                        let j = -(1 + CONFIG.ballDamping) * velAlongNormal;
+                        j /= (1 / ball.mass + 1 / other.mass);
+
+                        // Apply impulse
+                        const impulseX = j * nx;
+                        const impulseY = j * ny;
+
+                        ball.vx -= impulseX / ball.mass;
+                        ball.vy -= impulseY / ball.mass;
+                        other.vx += impulseX / other.mass;
+                        other.vy += impulseY / other.mass;
+                    }
+                }
+            });
+        }
+
+        // --- Main Game Loop ---
+        function gameLoop(timestamp) {
+            // FPS Calculation
+            if (timestamp > lastFpsTime + 1000) {
+                document.getElementById('fpsCounter').innerText = frameCount;
+                frameCount = 0;
+                lastFpsTime = timestamp;
+            }
+            frameCount++;
+
+            // 1. Clear Canvas
+            ctx.clearRect(0, 0, W, H);
+
+            // 2. Update Physics
+            balls.forEach(ball => {
+                ball.update();
+                ball.checkWallCollision();
+            });
+
+            // 3. Resolve Ball-to-Ball Collisions
+            resolveCollisions();
+
+            // 4. Draw
+            balls.forEach(ball => ball.draw());
+
+            // Update UI Stats
+            document.getElementById('interactionCount').innerText = interactions;
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('resetBtn').addEventListener('click', init);
+
+        // Start
+        init();
+        requestAnimationFrame(gameLoop);
+
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Qwen3-Coder-Next-UD-Q4_K_XL.gguf -->
+<!-- Prompt: ball_bound.md -->
+<!-- Time: 49.04s -->
+<!-- Fallback: False -->

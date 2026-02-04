@@ -3,6 +3,7 @@ Javascript Benchmarking Local LLMs using Llamacpp / Koboldcpp
 
 # View the current results
 This is the output from the current prompts.  
+* [Results 2026.02.04](https://electricazimuth.github.io/LocalLLM_VisualCodeTest/results/2026.02.04/)
 * [Results 2026.01.26](https://electricazimuth.github.io/LocalLLM_VisualCodeTest/results/2026.01.26/)
 * [Results 2026.01.20](https://electricazimuth.github.io/LocalLLM_VisualCodeTest/results/2026.01.20/)
 * [Results 2025.08.06](https://electricazimuth.github.io/LocalLLM_VisualCodeTest/results/2025.08.06/)

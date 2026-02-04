@@ -1,0 +1,357 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ray Marching Psychedelic Metaballs</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <script type="x-shader/x-vertex" id="vertexShader">
+        attribute vec2 a_position;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+
+    <script type="x-shader/x-fragment" id="fragmentShader">
+        precision highp float;
+
+        // Uniforms
+        uniform vec2 u_resolution;
+        uniform float u_time;
+        uniform float u_cameraZ;
+
+        // Metaball parameters (we'll control these from JS)
+        // We'll use an array of positions and sizes (for simplicity, 4 metaballs)
+        uniform vec3 u_metaballs[4]; // [x, y, radius]
+
+        // Smoothing parameter for SDF blending
+        uniform float u_smoothingFactor;
+
+        // Lighting
+        uniform vec3 u_lightDirection;
+        uniform vec3 u_ambientColor;
+        uniform vec3 u_diffuseColorBase;
+
+        // Noise for color variation (we'll use simple hash noise for now)
+        // We'll use a simple hash function for pseudo-noise
+        float hash(float n) {
+            return fract(sin(n) * 43758.5453123);
+        }
+
+        float noise(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f); // Smoothstep
+
+            // Hash for each corner
+            float n1 = hash(i.x + i.y * 157.0 + i.z * 157.0 * 157.0);
+            float n2 = hash(i.x + 1.0 + i.y * 157.0 + i.z * 157.0 * 157.0);
+            float n3 = hash(i.x + i.y * 157.0 + i.z * 157.0 * 157.0 + 1.0);
+            float n4 = hash(i.x + 1.0 + i.y * 157.0 + i.z * 157.0 * 157.0 + 1.0);
+            float n5 = hash(i.x + i.y * 157.0 + i.z * 157.0 * 157.0 + 2.0);
+            float n6 = hash(i.x + 1.0 + i.y * 157.0 + i.z * 157.0 * 157.0 + 2.0);
+            float n7 = hash(i.x + i.y * 157.0 + i.z * 157.0 * 157.0 + 3.0);
+            float n8 = hash(i.x + 1.0 + i.y * 157.0 + i.z * 157.0 * 157.0 + 3.0);
+
+            // Interpolate
+            return mix(mix(mix(n1, n2, f.x), mix(n3, n4, f.x), f.y), mix(mix(n5, n6, f.x), mix(n7, n8, f.x), f.y), f.z);
+        }
+
+        // Sphere SDF
+        float sphereSDF(vec3 p, vec3 center, float radius) {
+            return length(p - center) - radius;
+        }
+
+        // Smooth minimum (for blending metaballs)
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+
+        // Combine multiple spheres into a single SDF using smooth minimum
+        float sceneSDF(vec3 p) {
+            float d = 1000.0;
+
+            for (int i = 0; i < 4; i++) {
+                vec3 center = u_metaballs[i].xyz;
+                float radius = u_metaballs[i].z;
+                float dist = sphereSDF(p, center, radius);
+                d = smin(d, dist, u_smoothingFactor);
+            }
+
+            return d;
+        }
+
+        // Calculate surface normal using gradient
+        vec3 calculateNormal(vec3 p) {
+            float eps = 0.001;
+            vec3 n = vec3(
+                sceneSDF(vec3(p.x + eps, p.y, p.z)) - sceneSDF(vec3(p.x - eps, p.y, p.z)),
+                sceneSDF(vec3(p.x, p.y + eps, p.z)) - sceneSDF(vec3(p.x, p.y - eps, p.z)),
+                sceneSDF(vec3(p.x, p.y, p.z + eps)) - sceneSDF(vec3(p.x, p.y, p.z - eps))
+            );
+            return normalize(n);
+        }
+
+        // Ray marching function
+        vec3 rayMarch(vec3 ro, vec3 rd) {
+            vec3 color = vec3(0.0);
+            float t = 0.0;
+            float maxDist = 20.0;
+            float maxSteps = 100.0;
+            float hit = 0.0;
+
+            for (float i = 0.0; i < maxSteps; i++) {
+                vec3 p = ro + rd * t;
+                float d = sceneSDF(p);
+
+                if (d < 0.001) {
+                    hit = 1.0;
+                    break;
+                }
+
+                t += d;
+
+                if (t > maxDist) break;
+            }
+
+            if (hit > 0.0) {
+                vec3 p = ro + rd * t;
+                vec3 n = calculateNormal(p);
+                float diffuse = max(0.0, dot(n, u_lightDirection));
+                float spec = pow(max(0.0, dot(reflect(-rd, n), u_lightDirection)), 32.0);
+
+                // Color based on position and time (psychedelic palette)
+                vec3 baseColor = mix(
+                    vec3(1.0, 0.0, 0.0), // Red
+                    vec3(0.0, 1.0, 0.0), // Green
+                    fract(sin(p.x * 1.0 + u_time * 0.5) * 0.5 + 0.5)
+                );
+                baseColor = mix(baseColor, vec3(0.0, 0.0, 1.0), fract(sin(p.z * 1.0 + u_time * 0.3) * 0.5 + 0.5));
+
+                // Add noise for texture
+                float noiseValue = noise(p * 0.5 + vec3(u_time * 0.1));
+                baseColor = mix(baseColor, vec3(0.5, 0.5, 0.5), noiseValue * 0.2);
+
+                // Apply lighting
+                color = u_ambientColor + diffuse * baseColor + spec * 0.8;
+            }
+
+            return color;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+            uv = uv * 2.0 - 1.0; // Normalize to [-1, 1]
+            uv.x *= u_resolution.x / u_resolution.y; // Aspect ratio
+
+            // Camera setup
+            vec3 ro = vec3(0.0, 0.0, u_cameraZ); // Camera position (on z-axis)
+            vec3 rd = normalize(vec3(uv, -1.0)); // Ray direction (towards origin)
+
+            // Ray March
+            vec3 color = rayMarch(ro, rd);
+
+            // Background
+            if (length(rd) > 10.0) {
+                color = vec3(0.0);
+            }
+
+            gl_FragColor = vec4(color, 1.0);
+        }
+    </script>
+
+    <script>
+        // --- Standard WebGL Boilerplate ---
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        // --- Shader Setup ---
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, document.getElementById('vertexShader').textContent);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, document.getElementById('fragmentShader').textContent);
+
+        const program = createProgram(gl, vertexShader, fragmentShader);
+
+        // --- Buffer Setup ---
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,
+             1, -1,
+            -1,  1,
+            -1,  1,
+             1, -1,
+             1,  1
+        ]), gl.STATIC_DRAW);
+
+        const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+        gl.enableVertexAttribArray(positionAttributeLocation);
+        gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // --- Uniform Locations ---
+        const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
+        const timeLocation = gl.getUniformLocation(program, 'u_time');
+        const cameraZLocation = gl.getUniformLocation(program, 'u_cameraZ');
+        const metaballsLocation = gl.getUniformLocation(program, 'u_metaballs');
+        const smoothingFactorLocation = gl.getUniformLocation(program, 'u_smoothingFactor');
+        const lightDirectionLocation = gl.getUniformLocation(program, 'u_lightDirection');
+        const ambientColorLocation = gl.getUniformLocation(program, 'u_ambientColor');
+        const diffuseColorBaseLocation = gl.getUniformLocation(program, 'u_diffuseColorBase');
+
+        // --- Animation Setup ---
+        let then = 0;
+
+        function render(now) {
+            now *= 0.001; // Convert to seconds
+            const deltaTime = now - then;
+            then = now;
+
+            // Update uniforms
+            gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+            gl.uniform1f(timeLocation, now);
+            gl.uniform1f(cameraZLocation, 4.0 + sin(now * 0.5) * 0.5); // Slight camera movement
+
+            // Update metaball positions (animated over time)
+            const metaballs = [];
+            const numMetaballs = 4;
+            const baseRadius = 0.8;
+            const speed = 0.03;
+
+            for (let i = 0; i < numMetaballs; i++) {
+                const angle = i * 2.0 * Math.PI / numMetaballs;
+                const timeOffset = i * 0.5;
+                const radius = baseRadius + (0.2 * Math.sin(now * speed + timeOffset));
+                const x = Math.cos(angle + now * speed) * 2.0;
+                const y = Math.sin(angle + now * speed) * 2.0;
+                metaballs.push(x, y, radius);
+            }
+
+            gl.uniform3fv(metaballsLocation, new Float32Array(metaballs));
+            gl.uniform1f(smoothingFactorLocation, 0.5 + 0.1 * Math.sin(now * 0.5)); // Vary smoothness
+
+            // Lighting
+            gl.uniform3f(lightDirectionLocation, 1.0, 1.0, -1.0);
+            gl.uniform3f(ambientColorLocation, 0.05, 0.05, 0.05);
+            gl.uniform3f(diffuseColorBaseLocation, 1.0, 1.0, 1.0);
+
+            // Clear canvas
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Draw
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // Request next frame
+            requestAnimationFrame(render);
+        }
+
+        // --- Helper Functions ---
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            const success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (success) {
+                return shader;
+            }
+            console.error(gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+        }
+
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            const success = gl.getProgramParameter(program, gl.LINK_STATUS);
+            if (success) {
+                return program;
+            }
+            console.error(gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+        }
+
+        // --- Resize Handler ---
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // --- Start Animation ---
+        requestAnimationFrame(render);
+    </script>
+
+    <!-- Developer Notes -->
+    <!--
+    <section id="notes">
+        <h3>Implementation Notes</h3>
+        <p><strong>Ray Marching & SDFs:</strong> The fragment shader implements ray marching using a signed distance function (SDF) for multiple spheres. The SDFs are combined using a smooth minimum function to create the organic, merging metaball effect.</p>
+        <p><strong>Animation:</strong> Metaball positions and radii are updated each frame using sine functions driven by time. The camera position also wobbles slightly for a dynamic feel.</p>
+        <p><strong>Color & Lighting:</strong> Colors are generated using a combination of time, position, and noise for a psychedelic effect. Simple lighting with diffuse and specular components is used to give the metaballs volume.</p>
+        <p><strong>Optimization:</strong> The ray marching step count is limited (100), and a simple hash noise function is used for texture to keep performance good on most devices.</p>
+        <p><strong>Visual Goal:</strong> The result is a hypnotic, fluid simulation of glowing, merging blobs with vibrant, shifting colors — reminiscent of 1960s psychedelic light shows.</p>
+    </section>
+    -->
+</body>
+</html>
+```
+
+---
+
+## 🌈 What This Does
+
+This HTML file creates a full-screen WebGL application that renders a mesmerizing, evolving simulation of **metaballs** using **ray marching** and **Signed Distance Functions (SDFs)**.
+
+### ✨ Key Features:
+- **Ray Marching:** Each pixel traces a ray into a 3D scene using SDFs to find surfaces.
+- **SDF Metaballs:** Multiple spheres are blended using a smooth minimum function (`smin`) to create organic, merging shapes.
+- **Dynamic Animation:** Metaball positions, sizes, and colors change over time using `sin(time)` for a fluid, psychedelic effect.
+- **Psychedelic Coloring:** Vibrant, shifting colors based on position, time, and noise for a groovy, 60s-inspired look.
+- **Simple Lighting:** Ambient, diffuse, and specular shading gives the metaballs depth and glow.
+- **No External Libraries:** Pure WebGL + GLSL — no Three.js or other frameworks.
+
+### 🖌️ Visual Style
+Think **Pink Floyd light shows**, **liquid light projections**, or **early VJ visuals** — smooth, flowing, hypnotic blobs that pulse, merge, and separate with a rainbow of colors.
+
+### 💡 Notes on Optimization
+- The ray marching step count is capped at 100 for performance.
+- A simple hash-based noise is used for texture (could be replaced with simplex noise for better quality if needed).
+- The shader is designed to run efficiently on modern desktop and mobile browsers.
+
+---
+
+## 🧠 How to Extend It
+- Add **more metaballs** by increasing the array size and adjusting the loop.
+- Implement **Perlin/Simplex noise** in shader for more organic motion.
+- Add **reflections** or **ambient occlusion** for richer visuals.
+- Use `globalCompositeOperation` for post-processing (e.g., glow effects).
+
+---
+
+## 🚀 Run It!
+Just open this HTML file in any modern browser (Chrome, Firefox, Edge). No server needed — it's a standalone file!
+
+Enjoy the groovy vibes, man! 🌀✨
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Qwen3-VL-32B-Instruct-UD-Q6_K_XL.gguf -->
+<!-- Prompt: lightshow.md -->
+<!-- Time: 189.17s -->
+<!-- Fallback: False -->

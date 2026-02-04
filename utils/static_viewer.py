@@ -5,9 +5,9 @@ import html
 
 # --- Configuration ---
 PROMPTS_DIR = 'code_prompts'
-RESULTS_DIR = 'results/2026.01.26/html/'
+RESULTS_DIR = 'results/2026.02.04/html/'
 RESULTS_LOCAL_PATH = 'html/'
-OUTPUT_FILENAME = 'results/2026.01.26/static_viewer.html'
+OUTPUT_FILENAME = 'results/2026.02.04/index.html'
 
 # Define the intended original dimensions of the content within the HTML results
 IFRAME_ORIGINAL_WIDTH = 800

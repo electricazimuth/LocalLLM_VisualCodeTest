@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Aquarium Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #2c3e50;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        
+        h1 {
+            color: #006064;
+            margin-bottom: 10px;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.5);
+        }
+
+        .canvas-container {
+            position: relative;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas { 
+            display: block; 
+            background-color: rgb(207, 247, 255); /* Fallback */
+            background: linear-gradient(to bottom, #87CEEB, #006994);
+        }
+
+        #controls {
+            margin-top: 10px;
+            color: #555;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>Autonomous Aquarium</h1>
+    
+    <div class="canvas-container">
+        <canvas id="simulationCanvas" width="800" height="500"></canvas>
+    </div>
+    <div id="controls">Fish Count: <span id="fishCount">0</span> | Click to add more fish</div>
+
+    <section id="notes" style="width: 800px; background: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 20px;">
+        <h3>Implementation Notes</h3>
+        <ul>
+            <li><strong>Object-Oriented Design:</strong> The <code>Fish</code> class encapsulates state (position, velocity) and behavior (movement, drawing).</li>
+            <li><strong>Delta Time:</strong> Movement is calculated using `delta time` (time elapsed since last frame). This ensures fish swim at the same speed on a 60Hz monitor as they do on a 144Hz monitor.</li>
+            <li><strong>Steering Behaviors:</strong> Fish use a "wander" behavior (random slight course corrections) and a strong "boundary avoidance" force that activates when they get close to edges.</li>
+            <li><strong>Visuals:</strong> Fish are drawn using Canvas paths. They calculate their rotation angle based on velocity to face their direction of travel. A tail-waggle animation adds organic life.</li>
+            <li><strong>Performance:</strong> The simulation uses a single array for fish and a single pass for updates and rendering. Canvas transforms (`translate`/`rotate`) are used for drawing orientation to save calculation overhead.</li>
+        </ul>
+    </section>
+
+    <script>
+        // --- Configuration & Constants ---
+        const CONFIG = {
+            fishCount: 12,
+            maxSpeed: 100, // pixels per second
+            maxForce: 60,  // steering ability (lower = wider turns)
+            boundaryBuffer: 50, // distance from edge to start turning
+            bubbleCount: 30
+        };
+
+        // Helper: Random float between min and max
+        const random = (min, max) => Math.random() * (max - min) + min;
+        
+        // Helper: Random Color Generator (Ocean palette)
+        const randomFishColor = () => {
+            const colors = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#FF9F1C', '#C7F464', '#9D4EDD'];
+            return colors[Math.floor(Math.random() * colors.length)];
+        };
+
+        // --- Classes ---
+
+        class Bubble {
+            constructor(w, h) {
+                this.x = random(0, w);
+                this.y = random(0, h);
+                this.size = random(2, 8);
+                this.speed = random(10, 40);
+                this.wobble = random(0, Math.PI * 2);
+                this.wobbleSpeed = random(0.5, 2);
+            }
+
+            update(dt, h) {
+                // Move up
+                this.y -= this.speed * dt;
+                // Wobble side to side
+                this.wobble += this.wobbleSpeed * dt;
+                this.x += Math.sin(this.wobble) * 0.5;
+
+                // Reset if off screen
+                if (this.y < -10) {
+                    this.y = h + 10;
+                    this.x = random(0, h);
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fill();
+            }
+        }
+
+        class Fish {
+            constructor(w, h) {
+                // Position & Velocity
+                this.x = random(50, w - 50);
+                this.y = random(50, h - 50);
+                this.vx = random(-50, 50);
+                this.vy = random(-50, 50);
+                
+                // Appearance
+                this.color = randomFishColor();
+                this.size = random(10, 20); // Base radius size
+                this.length = this.size * 2.5;
+                
+                // Movement properties
+                this.maxSpeed = CONFIG.maxSpeed + random(-10, 20);
+                this.maxForce = CONFIG.maxForce;
+                this.speed = this.maxSpeed; // Start at max speed
+                this.angle = 0;
+                
+                // Animation properties
+                this.tailAngle = 0;
+                this.tailSpeed = 15; // radians per second
+            }
+
+            update(dt, w, h) {
+                // 1. Calculate Desired Velocity (Boundary Avoidance)
+                let steeringX = 0;
+                let steeringY = 0;
+
+                // Left Wall
+                if (this.x < CONFIG.boundaryBuffer) {
+                    steeringX += this.maxForce * 5 * (1 - this.x / CONFIG.boundaryBuffer);
+                }
+                // Right Wall
+                else if (this.x > w - CONFIG.boundaryBuffer) {
+                    steeringX -= this.maxForce * 5 * (1 - (w - this.x) / CONFIG.boundaryBuffer);
+                }
+                // Top Wall
+                if (this.y < CONFIG.boundaryBuffer) {
+                    steeringY += this.maxForce * 5 * (1 - this.y / CONFIG.boundaryBuffer);
+                }
+                // Bottom Wall
+                else if (this.y > h - CONFIG.boundaryBuffer) {
+                    steeringY -= this.maxForce * 5 * (1 - (h - this.y) / CONFIG.boundaryBuffer);
+                }
+
+                // 2. Wander Behavior (Random Jitter)
+                // We only add wandering if we aren't currently fighting a wall hard
+                if (steeringX === 0 && steeringY === 0) {
+                    const wanderStrength = this.maxForce * 0.5;
+                    steeringX += random(-wanderStrength, wanderStrength);
+                    steeringY += random(-wanderStrength, wanderStrength);
+                }
+
+                // Apply Steering to Velocity
+                this.vx += steeringX * dt;
+                this.vy += steeringY * dt;
+
+                // 3. Limit Speed
+                const currentSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                if (currentSpeed > this.maxSpeed) {
+                    const scale = this.maxSpeed / currentSpeed;
+                    this.vx *= scale;
+                    this.vy *= scale;
+                }
+
+                // 4. Update Position
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+
+                // 5. Update Orientation (Face direction of movement)
+                // Handle division by zero if fish stops (rare with this logic)
+                if (currentSpeed > 1) {
+                    this.angle = Math.atan2(this.vy, this.vx);
+                }
+
+                // 6. Animate Tail
+                this.tailAngle += this.tailSpeed * dt;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                
+                // Move to fish center
+                ctx.translate(this.x, this.y);
+                // Rotate to face direction
+                ctx.rotate(this.angle);
+
+                // Draw Tail (Wiggle effect)
+                const tailWiggle = Math.sin(this.tailAngle) * 0.2;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                // Tail is at the back (negative X relative to body center)
+                ctx.moveTo(-this.length / 2, 0);
+                ctx.lineTo(-this.length, -this.size / 1.5 + Math.sin(this.tailAngle + 2) * 5);
+                ctx.lineTo(-this.length, this.size / 1.5 + Math.sin(this.tailAngle - 2) * 5);
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw Body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                // Draw an ellipse facing right (positive X)
+                // Center of body is roughly at (-size/4, 0) relative to tail pivot for visual balance
+                ctx.ellipse(0, 0, this.length / 2, this.size / 2, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw Eye
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(this.length / 3, -this.size / 4, this.size / 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(this.length / 3 + 2, -this.size / 4, this.size / 8, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw Fin (Dorsal)
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.moveTo(-this.size/2, -this.size/2);
+                ctx.lineTo(this.size/2, -this.size/2 - (this.size/3));
+                ctx.lineTo(this.size, -this.size/2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // --- Main Simulation Logic ---
+
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        
+        let fishArray = [];
+        let bubbleArray = [];
+        let lastTime = 0;
+
+        // Initialization
+        function init() {
+            // Create Fish
+            for (let i = 0; i < CONFIG.fishCount; i++) {
+                fishArray.push(new Fish(W, H));
+            }
+
+            // Create Bubbles
+            for (let i = 0; i < CONFIG.bubbleCount; i++) {
+                bubbleArray.push(new Bubble(W, H));
+            }
+
+            // Start Loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        function gameLoop(timestamp) {
+            // Calculate Delta Time (in seconds)
+            if (!lastTime) lastTime = timestamp;
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Cap dt to prevent huge jumps if tab is inactive
+            const safeDt = Math.min(dt, 0.1);
+
+            // 1. Clear Canvas
+            // We redraw the gradient background every frame to clear previous content
+            const gradient = ctx.createLinearGradient(0, 0, 0, H);
+            gradient.addColorStop(0, '#87CEEB');  // Sky Blue
+            gradient.addColorStop(1, '#006994');  // Deep Blue
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, W, H);
+
+            // 2. Update & Draw Bubbles (Background)
+            bubbleArray.forEach(bubble => {
+                bubble.update(safeDt, H);
+                bubble.draw(ctx);
+            });
+
+            // 3. Update & Draw Fish
+            fishArray.forEach(fish => {
+                fish.update(safeDt, W, H);
+                fish.draw(ctx);
+            });
+
+            // Update UI
+            document.getElementById('fishCount').innerText = fishArray.length;
+
+            // Loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Interaction ---
+
+        // Add fish on click
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            // Optional: Spawn fish at mouse position
+            const newFish = new Fish(W, H);
+            // Set initial position to mouse click for fun
+            newFish.x = e.clientX - rect.left;
+            newFish.y = e.clientY - rect.top;
+            fishArray.push(newFish);
+        });
+
+        // Start the simulation
+        init();
+
+    </script>
+</body>
+</html>

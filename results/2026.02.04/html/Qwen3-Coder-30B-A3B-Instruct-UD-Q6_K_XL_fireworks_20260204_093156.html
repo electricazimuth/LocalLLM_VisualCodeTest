@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fireworks Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #111; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas { 
+            border: 1px solid #444; 
+            background-color: #000; 
+            display: block; 
+            margin: 20px auto; 
+            box-shadow: 0 0 20px rgba(255, 105, 180, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // --- Particle Management System ---
+        const particles = [];
+        let lastTime = 0;
+        let rocketLaunchTimer = 0;
+        const minRocketInterval = 500; // ms
+        const maxRocketInterval = 2000; // ms
+
+        // --- Physics Constants ---
+        const GRAVITY = 0.1;
+        const FRICTION = 0.99;
+        const MIN_EXPLOSION_PARTICLES = 30;
+        const MAX_EXPLOSION_PARTICLES = 80;
+
+        // --- Particle Classes ---
+        class Rocket {
+            constructor() {
+                this.x = W / 2 + (Math.random() - 0.5) * 100;
+                this.y = H;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = -Math.random() * 3 - 5; // Strong upward velocity
+                this.color = `hsl(${Math.random() * 360}, 100%, 60%)`;
+                this.size = 2;
+                this.life = 1;
+                this.exploded = false;
+                this.trail = [];
+                this.maxTrailLength = 10;
+            }
+
+            update(deltaTime) {
+                // Apply physics
+                this.vy += GRAVITY;
+                this.vx *= FRICTION;
+                this.vy *= FRICTION;
+                
+                // Update position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                
+                // Add to trail
+                this.trail.push({x: this.x, y: this.y});
+                if (this.trail.length > this.maxTrailLength) {
+                    this.trail.shift();
+                }
+                
+                // Check explosion conditions
+                if (this.vy >= 0 || this.y < H * 0.3) { // Explode at certain height or when falling
+                    this.explode();
+                }
+            }
+
+            explode() {
+                this.exploded = true;
+                const particleCount = Math.floor(Math.random() * (MAX_EXPLOSION_PARTICLES - MIN_EXPLOSION_PARTICLES + 1)) + MIN_EXPLOSION_PARTICLES;
+                
+                for (let i = 0; i < particleCount; i++) {
+                    particles.push(new ExplosionParticle(this.x, this.y, this.color));
+                }
+            }
+
+            draw() {
+                // Draw trail
+                for (let i = 0; i < this.trail.length; i++) {
+                    const point = this.trail[i];
+                    const alpha = i / this.trail.length * 0.5;
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, this.size * (i/this.trail.length), 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                    ctx.fill();
+                }
+                
+                // Draw rocket
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                // Add glow effect
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * 2, 0, Math.PI * 2);
+                const gradient = ctx.createRadialGradient(
+                    this.x, this.y, this.size,
+                    this.x, this.y, this.size * 2
+                );
+                gradient.addColorStop(0, this.color);
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = gradient;
+                ctx.fill();
+            }
+        }
+
+        class ExplosionParticle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.size = Math.random() * 2 + 1;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = (Math.random() - 0.5) * 4;
+                this.life = Math.random() * 2000 + 500; // 0.5-2.5 seconds
+                this.maxLife = this.life;
+                this.gravity = GRAVITY * 0.3;
+            }
+
+            update(deltaTime) {
+                // Apply physics
+                this.vy += this.gravity;
+                this.vx *= FRICTION;
+                this.vy *= FRICTION;
+                
+                // Update position
+                this.x += this.vx * deltaTime;
+                this.y += this.vy * deltaTime;
+                
+                // Reduce life
+                this.life -= deltaTime;
+            }
+
+            draw() {
+                const alpha = this.life / this.maxLife;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${this.getRGB(this.color)}, ${alpha})`;
+                ctx.fill();
+            }
+            
+            getRGB(color) {
+                // Simple conversion of hsl to rgb for alpha calculation
+                const match = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+                if (match) {
+                    const h = parseInt(match[1]);
+                    const s = parseInt(match[2]);
+                    const l = parseInt(match[3]);
+                    const c = (1 - Math.abs(2 * l/100 - 1)) * s/100;
+                    const x = c * (1 - Math.abs((h/60) % 2 - 1));
+                    const m = l/100 - c/2;
+                    let r, g, b;
+                    
+                    if (h < 60) [r, g, b] = [c, x, 0];
+                    else if (h < 120) [r, g, b] = [x, c, 0];
+                    else if (h < 180) [r, g, b] = [0, c, x];
+                    else if (h < 240) [r, g, b] = [0, x, c];
+                    else if (h < 300) [r, g, b] = [x, 0, c];
+                    else [r, g, b] = [c, 0, x];
+                    
+                    return `${Math.round((r + m) * 255)}, ${Math.round((g + m) * 255)}, ${Math.round((b + m) * 255)}`;
+                }
+                return '255, 255, 255';
+            }
+        }
+
+        // --- Game Loop ---
+        function gameLoop(timestamp) {
+            // Calculate delta time for smooth animation
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            // Clear canvas with a semi-transparent black for trail effect
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, W, H);
+            
+            // Launch new rockets
+            rocketLaunchTimer += deltaTime;
+            if (rocketLaunchTimer > minRocketInterval + Math.random() * (maxRocketInterval - minRocketInterval)) {
+                particles.push(new Rocket());
+                rocketLaunchTimer = 0;
+            }
+            
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                particle.update(deltaTime);
+                particle.draw();
+                
+                // Remove dead particles
+                if (particle.life <= 0 || particle.exploded) {
+                    particles.splice(i, 1);
+                }
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the simulation
+        requestAnimationFrame(gameLoop);
+
+        // Add some notes about the implementation
+        const notes = document.getElementById('notes');
+        notes.innerHTML = `
+            <h3>Fireworks Simulation Implementation Notes</h3>
+            <ul>
+                <li><strong>Object Management:</strong> All particles are stored in a single array with efficient update/draw logic</li>
+                <li><strong>Physics Simulation:</strong> Gravity, friction, and velocity-based movement for realistic motion</li>
+                <li><strong>Autonomous Launching:</strong> Rockets are launched at random intervals with varying trajectories</li>
+                <li><strong>Particle Types:</strong> Rockets with trails and explosion particles with fade effects</li>
+                <li><strong>Performance:</strong> Delta time ensures consistent animation speed across different frame rates</li>
+                <li><strong>Visual Effects:</strong> Glowing rockets, particle trails, and smooth fading animations</li>
+            </ul>
+        `;
+    </script>
+    <section id="notes">
+    
+    </section>
+</body>
+</html>
