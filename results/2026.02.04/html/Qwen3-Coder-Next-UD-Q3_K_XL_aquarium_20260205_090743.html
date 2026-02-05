@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #2c3e50;
+            font-family: sans-serif;
+        }
+        canvas { 
+            display: block; 
+            margin: 0 auto; 
+            background-color: #006994; /* Deep water color */
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #ui-layer {
+            position: absolute;
+            top: 10px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+            color: white;
+            text-shadow: 1px 1px 2px black;
+        }
+        h1 { margin: 0; font-size: 24px; letter-spacing: 2px; }
+        p { margin: 5px 0; font-size: 14px; opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">
+        <h1>Autonomous Aquarium</h1>
+        <p>Fish Count: <span id="fish-count">0</span> | FPS: <span id="fps">60</span></p>
+    </div>
+
+    <canvas id="simulationCanvas"></canvas>
+
+    <script>
+        /**
+         * CONFIGURATION & CONSTANTS
+         */
+        const CONFIG = {
+            fishCount: 15,
+            baseSpeed: 50,      // Pixels per second
+            turnSpeed: 2.5,     // Radians per second (how fast they turn)
+            wanderStrength: 1.5, // How much they wander
+            boundaryBuffer: 50, // Distance from wall to start turning
+            boundaryForce: 150, // How hard they turn away from walls
+            fishColors: ['#FF6B6B', '#4ECDC4', '#FFE66D', '#FF9F43', '#54A0FF', '#5F27CD'],
+            seaWeedCount: 20
+        };
+
+        /**
+         * UTILITIES
+         */
+        const MathUtils = {
+            lerp: (start, end, t) => start * (1 - t) + end * t,
+            randomRange: (min, max) => Math.random() * (max - min) + min,
+            randomColor: (palette) => palette[Math.floor(Math.random() * palette.length)],
+            toRad: (deg) => deg * (Math.PI / 180),
+            // Smoothly interpolate angle to avoid spinning 360 degrees unnecessarily
+            angleLerp: (start, end, t) => {
+                let diff = end - start;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                return start + diff * t;
+            }
+        };
+
+        /**
+         * SEAWEED CLASS (Background decoration)
+         */
+        class Seaweed {
+            constructor(canvasWidth, canvasHeight) {
+                this.x = MathUtils.randomRange(50, canvasWidth - 50);
+                this.y = canvasHeight;
+                this.height = MathUtils.randomRange(100, 300);
+                this.color = `rgba(0, ${MathUtils.randomRange(80, 120)}, 0, 0.7)`;
+                this.segments = 10;
+                this.waveOffset = Math.random() * 100;
+            }
+
+            draw(ctx, time) {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                
+                // Draw sine wave curve
+                const amplitude = 30;
+                const frequency = 0.02;
+                
+                for (let i = 1; i <= this.segments; i++) {
+                    const py = this.y - (this.height * (i / this.segments));
+                    // Oscillate X position based on time and height
+                    const px = this.x + Math.sin(time * 0.002 + this.waveOffset + (i * 0.5)) * amplitude * (i / this.segments);
+                    ctx.lineTo(px, py);
+                }
+                ctx.lineTo(this.x, this.y - this.height + 10);
+                ctx.fill();
+            }
+        }
+
+        /**
+         * FISH CLASS
+         */
+        class Fish {
+            constructor(w, h) {
+                this.width = w;
+                this.height = h;
+                
+                // Randomize appearance
+                this.size = MathUtils.randomRange(10, 25);
+                this.color = MathUtils.randomColor(CONFIG.fishColors);
+                
+                // Randomize speed slightly
+                this.speed = CONFIG.baseSpeed + MathUtils.randomRange(-10, 20);
+                
+                // Initial Position (keep away from edges slightly)
+                this.x = MathUtils.randomRange(this.size + 20, w - this.size - 20);
+                this.y = MathUtils.randomRange(this.size + 20, h - this.size - 20);
+                
+                // Initial Direction (random angle)
+                this.angle = MathUtils.randomRange(0, Math.PI * 2);
+                this.targetAngle = this.angle;
+                
+                // Animation properties
+                this.tailWiggle = 0;
+                this.tailSpeed = MathUtils.randomRange(0.1, 0.3);
+            }
+
+            update(dt, time) {
+                // 1. Calculate Wander
+                // Add a small random value to target angle over time
+                const wanderChange = (Math.random() - 0.5) * CONFIG.wanderStrength * dt;
+                this.targetAngle += wanderChange;
+
+                // 2. Smooth Turning
+                // Interpolate current angle towards target angle
+                this.angle = MathUtils.angleLerp(this.angle, this.targetAngle, CONFIG.turnSpeed * dt);
+
+                // 3. Boundary Avoidance (Repulsion)
+                let avoidanceX = 0;
+                let avoidanceY = 0;
+
+                // Check Left
+                if (this.x < CONFIG.boundaryBuffer) {
+                    avoidanceX = CONFIG.boundaryForce * dt;
+                }
+                // Check Right
+                if (this.x > this.width - CONFIG.boundaryBuffer) {
+                    avoidanceX = -CONFIG.boundaryForce * dt;
+                }
+                // Check Top
+                if (this.y < CONFIG.boundaryBuffer) {
+                    avoidanceY = CONFIG.boundaryForce * dt;
+                }
+                // Check Bottom
+                if (this.y > this.height - CONFIG.boundaryBuffer) {
+                    avoidanceY = -CONFIG.boundaryForce * dt;
+                }
+
+                // Apply avoidance to target angle
+                if (avoidanceX !== 0 || avoidanceY !== 0) {
+                    // Calculate angle that points away from walls
+                    const avoidanceAngle = Math.atan2(avoidanceY, avoidanceX);
+                    // Mix avoidance with wander
+                    this.targetAngle = MathUtils.angleLerp(this.targetAngle, avoidanceAngle, 0.8);
+                }
+
+                // 4. Move Fish
+                this.x += Math.cos(this.angle) * this.speed * dt;
+                this.y += Math.sin(this.angle) * this.speed * dt;
+
+                // 5. Hard Clamp for safety (prevent sticking)
+                if (this.x < 0) this.x = 0;
+                if (this.x > this.width) this.x = this.width;
+                if (this.y < 0) this.y = 0;
+                if (this.y > this.height) this.y = this.height;
+
+                // 6. Update Tail Animation
+                this.tailWiggle = Math.sin(time * this.tailSpeed) * 0.3;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                // Move context to fish position
+                ctx.translate(this.x, this.y);
+                // Rotate context to face direction
+                ctx.rotate(this.angle);
+
+                // Draw Tail
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                const tailOffset = -this.size; // Tail is behind the body
+                ctx.moveTo(tailOffset - 10, 0);
+                ctx.lineTo(tailOffset - 25, -10 + (this.tailWiggle * 10));
+                ctx.lineTo(tailOffset - 25, 10 + (this.tailWiggle * 10));
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw Body (Trapezoid shape)
+                ctx.beginPath();
+                ctx.moveTo(0, -this.size / 2); // Top back
+                ctx.lineTo(this.size, -this.size / 4); // Top front (nose)
+                ctx.lineTo(0, this.size / 2); // Bottom back
+                ctx.lineTo(tailOffset, 0); // Bottom tip
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw Eye
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(this.size * 0.7, -this.size / 5, this.size / 6, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Pupil
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(this.size * 0.8, -this.size / 5, this.size / 12, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        /**
+         * MAIN SIMULATION CONTROLLER
+         */
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Responsive Canvas Setup
+        function resizeCanvas() {
+            canvas.width = window.innerWidth > 800 ? 800 : window.innerWidth - 20;
+            canvas.height = window.innerHeight > 600 ? 600 : window.innerHeight - 20;
+            
+            // Re-initialize seaWeed on resize to fit new dimensions
+            initSeaweed();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // State
+        let fishArray = [];
+        let seaWeedArray = [];
+        let lastTime = 0;
+        
+        // DOM Elements for UI
+        const uiFishCount = document.getElementById('fish-count');
+        const uiFps = document.getElementById('fps');
+
+        function initFish() {
+            fishArray = [];
+            for (let i = 0; i < CONFIG.fishCount; i++) {
+                fishArray.push(new Fish(canvas.width, canvas.height));
+            }
+            uiFishCount.innerText = fishArray.length;
+        }
+
+        function initSeaweed() {
+            seaWeedArray = [];
+            for (let i = 0; i < CONFIG.seaWeedCount; i++) {
+                seaWeedArray.push(new Seaweed(canvas.width, canvas.height));
+            }
+        }
+
+        // Animation Loop
+        function gameLoop(timestamp) {
+            // Calculate Delta Time (in seconds)
+            if (!lastTime) lastTime = timestamp;
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Cap dt to prevent huge jumps if tab is inactive
+            const safeDt = Math.min(dt, 0.1);
+
+            // 1. Clear Canvas
+            // Create a gradient for depth effect
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#006994'); // Lighter blue top
+            gradient.addColorStop(1, '#00334e'); // Darker blue bottom
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Draw Background Elements (Seaweed)
+            seaWeedArray.forEach(weed => weed.draw(ctx, timestamp));
+
+            // 3. Update and Draw Fish
+            fishArray.forEach(fish => {
+                fish.update(safeDt, timestamp);
+                fish.draw(ctx);
+            });
+
+            // Update FPS UI
+            if (timestamp % 20 < 1) { // Update UI roughly every frame or so
+                uiFps.innerText = Math.round(1000 / (dt * 1000));
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize and Start
+        initFish();
+        initSeaweed();
+        requestAnimationFrame(gameLoop);
+
+    </script>
+</body>
+</html>

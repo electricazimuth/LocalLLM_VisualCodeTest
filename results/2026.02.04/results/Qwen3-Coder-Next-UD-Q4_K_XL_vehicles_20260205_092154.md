@@ -1,0 +1,421 @@
+Here is the complete solution in a single HTML file. It includes the CSS for styling, the HTML structure for the canvas, and the robust JavaScript logic handling the simulation states, vehicle movement, collision detection, and particle explosions.
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vehicle Collision Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #333; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: sans-serif;
+            color: #ccc;
+        }
+        canvas { 
+            display: block; 
+            margin: 20px auto; 
+            border: 2px solid #666; 
+            background-color: #000; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            pointer-events: none; /* Let clicks pass through to canvas if needed */
+        }
+        h1 { margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 2px; }
+        p { font-size: 14px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">
+        <h1 id="status-text">Simulation Running</h1>
+        <p>Vehicles: <span id="vehicle-count">0</span> | Collisions: <span id="collision-count">0</span></p>
+    </div>
+    
+    <canvas id="simulationCanvas"></canvas>
+
+    <script>
+        /**
+         * CONFIGURATION
+         */
+        const CONFIG = {
+            vehicleCount: 8,
+            vehicleSize: 20, // Radius for collision, visual size approx 40x40
+            vehicleSpeed: 150, // Pixels per second
+            minSpeedVariance: 0.5,
+            maxSpeedVariance: 1.5,
+            colors: ['#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF5', '#F5FF33'],
+            explosionCount: 30,
+            explosionDuration: 1000, // ms
+            restartDelay: 2500 // ms
+        };
+
+        // --- STATE MANAGEMENT ---
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // UI Elements
+        const statusText = document.getElementById('status-text');
+        const vehicleCountDisplay = document.getElementById('vehicle-count');
+        const collisionCountDisplay = document.getElementById('collision-count');
+
+        // Set canvas size based on CSS display
+        canvas.width = 512;
+        canvas.height = 512;
+
+        // Enum for states
+        const STATE = {
+            RUNNING: 'RUNNING',
+            EXPLODING: 'EXPLODING',
+            RESTARTING: 'RESTARTING'
+        };
+
+        let currentState = STATE.RUNNING;
+        let vehicles = [];
+        let explosionParticles = [];
+        let lastTime = 0;
+        let totalCollisions = 0;
+        let explosionTimer = 0;
+
+        // --- CLASSES ---
+
+        class Vehicle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.radius = CONFIG.vehicleSize;
+                this.color = color;
+                this.isActive = true;
+                
+                // Random velocity vector
+                const angle = Math.random() * Math.PI * 2;
+                const speed = CONFIG.vehicleSpeed * (CONFIG.minSpeedVariance + 
+                    Math.random() * (CONFIG.maxSpeedVariance - CONFIG.minSpeedVariance));
+                
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                
+                // Visual details
+                this.width = this.radius * 2.5;
+                this.height = this.radius * 1.5;
+            }
+
+            update(dt) {
+                if (!this.isActive) return;
+
+                // Move
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+
+                // Wrapping Logic
+                if (this.x - this.radius > canvas.width) {
+                    this.x = -this.radius;
+                } else if (this.x + this.radius < 0) {
+                    this.x = canvas.width + this.radius;
+                }
+
+                if (this.y - this.radius > canvas.height) {
+                    this.y = -this.radius;
+                } else if (this.y + this.radius < 0) {
+                    this.y = canvas.height + this.radius;
+                }
+            }
+
+            draw(ctx) {
+                if (!this.isActive) return;
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Calculate rotation angle based on velocity
+                const angle = Math.atan2(this.vy, this.vx);
+                ctx.rotate(angle);
+
+                // Draw Car Body
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                ctx.shadowBlur = 5;
+                
+                // Rounded Rectangle for body
+                ctx.beginPath();
+                ctx.roundRect(-this.width / 2, -this.height / 2, this.width, this.height, 5);
+                ctx.fill();
+
+                // Draw Windows
+                ctx.fillStyle = '#88CCFF';
+                ctx.beginPath();
+                ctx.roundRect(-5, -this.height / 2 + 2, 10, this.height - 4, 2);
+                ctx.fill();
+
+                // Draw Wheels
+                ctx.fillStyle = '#111';
+                // Top wheel
+                ctx.beginPath();
+                ctx.arc(-this.width / 3, -this.height / 2 - 2, 4, 0, Math.PI * 2);
+                ctx.fill();
+                // Bottom wheel
+                ctx.beginPath();
+                ctx.arc(-this.width / 3, this.height / 2 + 2, 4, 0, Math.PI * 2);
+                ctx.fill();
+                // Rear wheel
+                ctx.beginPath();
+                ctx.arc(this.width / 3, -this.height / 2 - 2, 4, 0, Math.PI * 2);
+                ctx.fill();
+                // Rear wheel
+                ctx.beginPath();
+                ctx.arc(this.width / 3, this.height / 2 + 2, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        class ExplosionParticle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.age = 0;
+                this.maxLife = 1.0 + Math.random() * 1.0; // 1 to 2 seconds
+                this.size = 2 + Math.random() * 4;
+                
+                // Random outward velocity
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 50 + Math.random() * 150;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                
+                this.gravity = 10; // Slight gravity
+            }
+
+            update(dt) {
+                this.age += dt;
+                
+                // Apply velocity
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                
+                // Apply gravity
+                this.vy += this.gravity * dt;
+                
+                // Friction (slow down over time)
+                this.vx *= 0.95;
+                this.vy *= 0.95;
+            }
+
+            draw(ctx) {
+                const alpha = 1 - (this.age / this.maxLife);
+                if (alpha <= 0) return;
+
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            isDead() {
+                return this.age >= this.maxLife;
+            }
+        }
+
+        // --- INITIALIZATION ---
+
+        function initVehicles() {
+            vehicles = [];
+            for (let i = 0; i < CONFIG.vehicleCount; i++) {
+                // Random position within canvas (padding from edges)
+                const x = 50 + Math.random() * (canvas.width - 100);
+                const y = 50 + Math.random() * (canvas.height - 100);
+                const color = CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)];
+                vehicles.push(new Vehicle(x, y, color));
+            }
+        }
+
+        function createExplosion(x, y) {
+            explosionParticles = [];
+            // Create particles with random colors from vehicle palette + white/yellow
+            const explosionColors = [...CONFIG.colors, '#FFFFFF', '#FFFF00'];
+            
+            for (let i = 0; i < CONFIG.explosionCount; i++) {
+                const color = explosionColors[Math.floor(Math.random() * explosionColors.length)];
+                explosionParticles.push(new ExplosionParticle(x, y, color));
+            }
+        }
+
+        function resetSimulation() {
+            currentState = STATE.RUNNING;
+            vehicles = [];
+            explosionParticles = [];
+            totalCollisions = 0;
+            lastTime = performance.now();
+            
+            statusText.innerText = "Simulation Running";
+            statusText.style.color = "#ccc";
+            
+            initVehicles();
+        }
+
+        // --- COLLISION LOGIC ---
+
+        function checkCollisions() {
+            for (let i = 0; i < vehicles.length; i++) {
+                for (let j = i + 1; j < vehicles.length; j++) {
+                    const v1 = vehicles[i];
+                    const v2 = vehicles[j];
+
+                    if (!v1.isActive || !v2.isActive) continue;
+
+                    // Calculate distance between centers
+                    const dx = v1.x - v2.x;
+                    const dy = v1.y - v2.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDistance = v1.radius + v2.radius;
+
+                    if (distance < minDistance) {
+                        // Collision Detected
+                        handleCollision(v1, v2);
+                        return true; // Return true to indicate a collision happened this frame
+                    }
+                }
+            }
+            return false;
+        }
+
+        function handleCollision(v1, v2) {
+            totalCollisions++;
+            collisionCountDisplay.innerText = totalCollisions;
+
+            // Mark vehicles inactive
+            v1.isActive = false;
+            v2.isActive = false;
+
+            // Calculate midpoint for explosion
+            const explosionX = (v1.x + v2.x) / 2;
+            const explosionY = (v1.y + v2.y) / 2;
+
+            // Trigger Explosion
+            createExplosion(explosionX, explosionY);
+            currentState = STATE.EXPLODING;
+            
+            // Visual Feedback
+            statusText.innerText = "COLLISION DETECTED - EXPLODING";
+            statusText.style.color = "#ff4444";
+
+            // Start countdown to restart
+            explosionTimer = 0;
+        }
+
+        // --- MAIN LOOP ---
+
+        function update(dt) {
+            if (currentState === STATE.RUNNING) {
+                // Update Vehicles
+                vehicles.forEach(v => v.update(dt));
+                
+                // Check Collisions
+                if (checkCollisions()) {
+                    currentState = STATE.EXPLODING;
+                }
+                
+                // Update UI
+                vehicleCountDisplay.innerText = vehicles.filter(v => v.isActive).length;
+
+            } else if (currentState === STATE.EXPLODING) {
+                // Update Particles
+                explosionParticles.forEach(p => p.update(dt));
+
+                // Check if explosion is finished
+                const allDead = explosionParticles.every(p => p.isDead());
+                
+                if (allDead) {
+                    currentState = STATE.RESTARTING;
+                    statusText.innerText = "Restarting Simulation...";
+                } else {
+                    // Optional: Add a timer for the explosion even if particles linger
+                    // For this logic, we wait for particles to die.
+                }
+
+            } else if (currentState === STATE.RESTARTING) {
+                // Short delay before resetting
+                explosionTimer += dt;
+                if (explosionTimer >= (CONFIG.restartDelay / 1000)) {
+                    resetSimulation();
+                }
+            }
+        }
+
+        function draw() {
+            // Clear Canvas
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Grid (Optional visual flair)
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for(let x=0; x<canvas.width; x+=64) { ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); }
+            for(let y=0; y<canvas.height; y+=64) { ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); }
+            ctx.stroke();
+
+            if (currentState === STATE.RUNNING || currentState === STATE.EXPLODING) {
+                vehicles.forEach(v => v.draw(ctx));
+            }
+
+            if (currentState === STATE.EXPLODING) {
+                explosionParticles.forEach(p => p.draw(ctx));
+                
+                // Draw "BOOM" text
+                const alpha = 1 - (explosionTimer / 2.0); // Fade out over last 2 seconds
+                if (alpha > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = "bold 80px Arial";
+                    ctx.textAlign = "center";
+                    ctx.shadowColor = "red";
+                    ctx.shadowBlur = 20;
+                    ctx.fillText("BOOM!", canvas.width / 2, canvas.height / 2);
+                    ctx.restore();
+                }
+            }
+        }
+
+        function loop(timestamp) {
+            // Calculate Delta Time (in seconds)
+            if (!lastTime) lastTime = timestamp;
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            update(dt);
+            draw();
+
+            requestAnimationFrame(loop);
+        }
+
+        // Start the simulation
+        resetSimulation();
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Qwen3-Coder-Next-UD-Q4_K_XL.gguf -->
+<!-- Prompt: vehicles.md -->
+<!-- Time: 54.67s -->
+<!-- Fallback: False -->

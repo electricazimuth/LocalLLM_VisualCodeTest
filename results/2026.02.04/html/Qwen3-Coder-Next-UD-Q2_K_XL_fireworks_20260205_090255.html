@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Autonomous Fireworks Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #1a1a1a; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #ccc;
+            font-family: sans-serif;
+        }
+        canvas { 
+            border: 1px solid #555; 
+            background-color: #050505; 
+            display: block; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        .controls {
+            margin-top: 10px;
+            text-align: center;
+        }
+        button {
+            padding: 8px 16px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: #444; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div class="controls">
+        <p>Autonomous Fireworks Simulation</p>
+        <button id="resetBtn">Reset Simulation</button>
+    </div>
+    
+    <section id="notes">
+        <h3>Implementation Notes:</h3>
+        <ul>
+            <li><strong>Game Loop:</strong> Uses <code>requestAnimationFrame</code> with <code>deltaTime</code> to ensure smooth physics regardless of frame rate.</li>
+            <li><strong>Physics Engine:</strong> Implements basic Galilean physics where <code>velocityY</code> is affected by <code>gravity</code> continuously.</li>
+            <li><strong>Entity Management:</strong> All particles (Rockets and Explosions) are stored in a single <code>particles</code> array. Inactive particles are filtered out during the update loop to maintain performance.</li>
+            <li><strong>Classes:</strong> Uses ES6 Classes (`FireworkRocket` and `ExplosionParticle`) to encapsulate state and behavior.</li>
+            <li><strong>Randomness:</strong> Launches are scheduled randomly. Explosion particle directions are calculated using polar coordinates (angle) converted to Cartesian (x, y) to ensure radial symmetry.</li>
+        </ul>
+    </section>
+
+    <script>
+        // --- Configuration Constants ---
+        const CONFIG = {
+            GRAVITY: 1500,        // Pixels per second squared
+            ROCKET_FUSE_MIN: 0.5, // Seconds
+            ROCKET_FUSE_MAX: 1.8,
+            ROCKET_SPEED: 600,    // Initial upward speed
+            PARTICLE_COUNT: 60,   // Particles per explosion
+            PARTICLE_LIFESPAN: 2.0, // Seconds
+            LAUNCH_INTERVAL_MIN: 500, // ms
+            LAUNCH_INTERVAL_MAX: 2500, // ms
+            CANVAS_WIDTH: 800,
+            CANVAS_HEIGHT: 600
+        };
+
+        // --- Helper Functions ---
+        const randomRange = (min, max) => Math.random() * (max - min) + min;
+        const randomColor = () => {
+            // HSL for vivid colors, random hue
+            const hue = Math.floor(Math.random() * 360);
+            return `hsl(${hue}, 100%, 60%)`;
+        };
+
+        // --- Particle Classes ---
+
+        class FireworkRocket {
+            constructor(canvasWidth, canvasHeight) {
+                // Start at bottom, random x position (left 80% of screen)
+                this.x = randomRange(canvasWidth * 0.1, canvasWidth * 0.9);
+                this.y = canvasHeight;
+                
+                // Velocity: Upwards with slight randomness
+                this.vx = randomRange(-50, 50);
+                this.vy = -randomRange(CONFIG.ROCKET_SPEED * 0.8, CONFIG.ROCKET_SPEED * 1.2);
+                
+                // Appearance
+                this.color = randomColor();
+                this.size = 3;
+                
+                // Logic
+                this.fuse = randomRange(CONFIG.ROCKET_FUSE_MIN, CONFIG.ROCKET_FUSE_MAX);
+                this.exploded = false;
+            }
+
+            update(dt, canvasHeight) {
+                // Apply Physics
+                this.y += this.vy * dt;
+                this.x += this.vx * dt;
+
+                // Apply Gravity (affects the rocket less than particles, or none at all usually)
+                // We apply slight gravity so rockets弧线 look natural
+                this.vy += CONFIG.GRAVITY * 0.3 * dt; // Reduced gravity for rockets
+                this.fuse -= dt;
+
+                // Explosion Logic
+                if (this.fuse <= 0 || this.y <= canvasHeight * 0.25 || this.vy > -50) {
+                    this.exploded = true;
+                }
+            }
+
+            draw(ctx) {
+                if (this.exploded) return;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class ExplosionParticle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.size = randomRange(2, 4);
+                this.life = CONFIG.PARTICLE_LIFESPAN;
+                this.maxLife = this.life;
+
+                // Explosion Physics: Random radial direction
+                const angle = randomRange(0, Math.PI * 2);
+                // Speed variation
+                const speed = randomRange(100, 350);
+                
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+            }
+
+            update(dt) {
+                // Update Position
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+
+                // Update Physics (Strong Gravity for sparks)
+                this.vy += CONFIG.GRAVITY * dt;
+
+                // Update Life
+                this.life -= dt;
+            }
+
+            draw(ctx) {
+                if (this.life <= 0) return;
+
+                // Calculate Alpha based on remaining life
+                const alpha = this.life / this.maxLife;
+                
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = alpha;
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.globalAlpha = 1.0; // Reset alpha for other drawings
+            }
+        }
+
+        // --- Main Simulation Controller ---
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Set Canvas Size
+        canvas.width = CONFIG.CANVAS_WIDTH;
+        canvas.height = CONFIG.CANVAS_HEIGHT;
+        
+        const W = canvas.width;
+        const H = canvas.height;
+
+        let particles = [];
+        let lastLaunchTime = 0;
+        let nextLaunchDelay = 0;
+        let animationId;
+
+        // Initialize random delay
+        nextLaunchDelay = randomRange(CONFIG.LAUNCH_INTERVAL_MIN, CONFIG.LAUNCH_INTERVAL_MAX);
+
+        function launchFirework() {
+            const rocket = new FireworkRocket(W, H);
+            particles.push(rocket);
+            
+            // Calculate when the next firework should launch
+            // We use a timer approach so launches are spaced out
+            lastLaunchTime = performance.now();
+            nextLaunchDelay = randomRange(CONFIG.LAUNCH_INTERVAL_MIN, CONFIG.LAUNCH_INTERVAL_MAX);
+        }
+
+        function gameLoop(timestamp) {
+            // 1. Calculate Delta Time (in seconds)
+            // We need dt in seconds for physics calculations (pixels per second)
+            if (!animationId) animationId = timestamp;
+            const dt = (timestamp - animationId) / 1000;
+            animationId = timestamp;
+
+            // Ensure dt isn't too huge (e.g. if tab was inactive)
+            const safeDt = Math.min(dt, 0.1);
+
+            // 2. Clear Canvas
+            // Using a semi-transparent fillRect creates a "trail" effect
+            // But for this request, we want clean bursts, so we clear completely
+            ctx.fillStyle = '#050505'; // Very dark grey/black
+            ctx.fillRect(0, 0, W, H);
+
+            // 3. Autonomous Launch Logic
+            const currentTime = performance.now();
+            if (currentTime - lastLaunchTime >= nextLaunchDelay) {
+                launchFirework();
+            }
+
+            // 4. Update & Draw Logic
+            // Iterate backwards to safely remove items from array
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+
+                p.update(safeDt, H);
+                p.draw(ctx);
+
+                // Check if particle should be removed
+                // Remove if:
+                // 1. It's a rocket that has exploded (handled by flag, removed in next frame logic usually)
+                // 2. It's an explosion particle with life <= 0
+                // 3. It's fallen off screen (optional, helps performance)
+                
+                const isExpired = p.life !== undefined && p.life <= 0;
+                const isOffScreen = p.y > H + 100 || p.x < -100 || p.x > W + 100;
+                
+                if (p.exploded || isExpired || isOffScreen) {
+                    // Special logic for explosions:
+                    if (p.exploded && p instanceof FireworkRocket) {
+                        // Create explosion fragments
+                        const count = randomRange(CONFIG.PARTICLE_COUNT * 0.8, CONFIG.PARTICLE_COUNT * 1.2);
+                        for (let j = 0; j < count; j++) {
+                            particles.push(new ExplosionParticle(p.x, p.y, p.color));
+                        }
+                    }
+                    
+                    // Remove from array
+                    particles.splice(i, 1);
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Listeners & Setup ---
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            particles = [];
+            particles.length = 0; // Clear array
+            lastLaunchTime = 0;
+            nextLaunchDelay = randomRange(CONFIG.LAUNCH_INTERVAL_MIN, CONFIG.LAUNCH_INTERVAL_MAX);
+        });
+
+        // Start the simulation
+        requestAnimationFrame(gameLoop);
+
+    </script>
+</body>
+</html>

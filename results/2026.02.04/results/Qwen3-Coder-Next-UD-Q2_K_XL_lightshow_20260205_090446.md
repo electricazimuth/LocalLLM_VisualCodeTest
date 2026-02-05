@@ -1,0 +1,390 @@
+Here is the complete, single-file solution. It includes the HTML structure, CSS for styling, and the full JavaScript/WebGL setup along with the complex Fragment and Vertex shaders required to create the psychedelic metaball simulation.
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Psychedelic Ray Marching Metaballs</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #000; 
+            width: 100vw;
+            height: 100vh;
+        }
+        canvas { 
+            display: block; 
+            width: 100%;
+            height: 100%;
+        }
+        #notes {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.7);
+            font-family: sans-serif;
+            font-size: 12px;
+            pointer-events: none;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <section id="notes">
+        <strong>Implementation Details:</strong><br>
+        • <strong>Technique:</strong> Ray Marching (SDF) with Smooth Minimum (Metaballs)<br>
+        • <strong>Shaders:</strong> Custom GLSL implementation (No libraries)<br>
+        • <strong>Animation:</strong> Time-based uniform updates driving sphere positions<br>
+        • <strong>Style:</strong> Retro-60s psychedelic color palette + volumetric glow<br>
+        • <strong>Lighting:</strong> Simple Phong + Ambient Occlusion approximation
+    </section>
+
+    <!-- VERTEX SHADER -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        void main() {
+            // Pass the full-screen quad coordinates directly to fragment shader
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+
+    <!-- FRAGMENT SHADER -->
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+
+        uniform vec2 u_resolution;
+        uniform float u_time;
+
+        // ----------------------------------------------------
+        // SDF FUNCTIONS
+        // ----------------------------------------------------
+
+        // Signed Distance Function for a Sphere
+        // p: point in 3D space, c: center, r: radius
+        float sdSphere(vec3 p, vec3 c, float r) {
+            vec3 dist = p - c;
+            return length(dist) - r;
+        }
+
+        // Smooth Minimum Function
+        // Blends two signed distance values smoothly
+        // k: control parameter (smaller = smoother merge)
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            // The "classic" smoothmin formula
+            // return min(a, b) - k * h * h * h * (1.0 - h);
+            
+            // Exponential smoothmin (more organic merging)
+            return -log(exp(-k * a) + exp(-k * b)) / k;
+        }
+
+        // Scene SDF: Combines multiple metaballs
+        float mapScene(vec3 p) {
+            // Dynamic metaballs
+            // We create a "dancing" effect using sine and cosine based on time
+            
+            // Ball 1: Moves in a figure-8 pattern on XZ plane
+            vec3 pos1 = vec3(
+                sin(u_time * 0.5) * 1.5,
+                cos(u_time * 0.8) * 0.5,
+                sin(u_time * 0.8) * 1.5
+            );
+            float d1 = sdSphere(p, pos1, 1.2 + sin(u_time * 0.3) * 0.5);
+
+            // Ball 2: Orbiting around the origin
+            vec3 pos2 = vec3(
+                cos(u_time * 1.0) * 2.0,
+                sin(u_time * 0.2) * 1.5,
+                sin(u_time * 1.0) * 2.0
+            );
+            float d2 = sdSphere(p, pos2, 1.0 + cos(u_time * 0.5) * 0.5);
+
+            // Ball 3: Spinning top/bottom movement
+            vec3 pos3 = vec3(
+                sin(u_time * 2.0) * 1.0,
+                cos(u_time * 1.5) * 2.5,
+                cos(u_time * 1.0) * 0.5
+            );
+            float d3 = sdSphere(p, pos3, 0.9);
+
+            // Ball 4: Rapid jittering for high-frequency detail
+            vec3 pos4 = vec3(
+                cos(u_time * 5.0) * 0.5,
+                sin(u_time * 3.0) * 0.5,
+                sin(u_time * 5.0) * 0.5
+            );
+            float d4 = sdSphere(p, pos4, 0.6);
+
+            // Combine all using Smooth Minimum
+            // We chain the smin calls
+            float dist = smin(d1, d2, 1.5);
+            dist = smin(dist, d3, 1.5);
+            dist = smin(dist, d4, 1.0);
+
+            return dist;
+        }
+
+        // Ray Marching Loop
+        // Returns the distance traveled to the hit point, or -1 if missed
+        float raymarch(vec3 origin, vec3 dir) {
+            float t = 0.0; // Distance traveled
+            float maxDist = 50.0;
+            int maxSteps = 64;
+
+            for (int i = 0; i < 64; i++) {
+                vec3 pos = origin + t * dir;
+                float dist = mapScene(pos);
+                
+                // If we are very close to a surface, we hit it
+                if (dist < 0.001) {
+                    return t;
+                }
+                
+                t += dist;
+                
+                // If we've gone too far, we missed
+                if (t > maxDist) {
+                    return -1.0;
+                }
+            }
+            return -1.0;
+        }
+
+        // Calculate Surface Normal by sampling gradient
+        vec3 calcNormal(vec3 p) {
+            float d = mapScene(p);
+            // Central difference approximation
+            float xDist = mapScene(vec3(p.x + 0.001, p.y, p.z));
+            float yDist = mapScene(vec3(p.x, p.y + 0.001, p.z));
+            float zDist = mapScene(vec3(p.x, p.y, p.z + 0.001));
+            
+            vec3 gradient = vec3(xDist - d, yDist - d, zDist - d);
+            return normalize(gradient);
+        }
+
+        // Simple lighting calculation
+        vec3 shade(vec3 p, vec3 normal) {
+            vec3 lightPos = vec3(0.0, 5.0, -10.0);
+            vec3 lightDir = normalize(lightPos - p);
+            
+            // Diffuse (Lambertian)
+            float diff = clamp(dot(normal, lightDir), 0.0, 1.0);
+            
+            // Ambient
+            float amb = 0.3;
+            
+            // Specular (Blinn-Phong)
+            vec3 viewDir = normalize(-p); // Camera is at origin looking -Z
+            vec3 halfDir = normalize(lightDir + viewDir);
+            float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
+
+            return vec3(diff + amb + spec);
+        }
+
+        // Psychedelic Color Palette Function
+        // Returns colors based on position and time to create rainbow effects
+        vec3 getPsychedelicColor(vec3 p, float dist) {
+            // Use spatial position to determine color
+            float hue = (fract(p.x * 0.3 + p.y * 0.2 + p.z * 0.2 + u_time * 0.1)) * 360.0;
+            
+            // Add some noise-like patterns
+            hue += sin(p.x * 2.0) * cos(p.y * 2.0) * 20.0;
+
+            // HSL to RGB conversion helper
+            float h = hue / 360.0;
+            float s = 0.9;
+            float l = 0.6 - dist * 0.05; // Dim slightly with distance
+
+            // Simple HSL to RGB approximation
+            float c = l * (1.0 - abs(2.0 * l - 1.0));
+            float x = c * (1.0 - abs(floor(h * 6.0) % 2.0 - 0.5) * 2.0);
+            float m = l - c;
+
+            vec3 rgb;
+            if (h < 1.0/6.0) rgb = vec3(c, x, 0.0);
+            else if (h < 2.0/6.0) rgb = vec3(x, c, 0.0);
+            else if (h < 3.0/6.0) rgb = vec3(0.0, c, x);
+            else if (h < 4.0/6.0) rgb = vec3(0.0, x, c);
+            else if (h < 5.0/6.0) rgb = vec3(x, 0.0, c);
+            else rgb = vec3(c, 0.0, x);
+
+            return rgb + m;
+        }
+
+        void main() {
+            // Normalize pixel coordinates (from -1 to 1)
+            vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
+
+            // Camera Setup
+            vec3 origin = vec3(0.0, 0.0, 0.0);
+            // Camera looks down -Z axis
+            vec3 forward = vec3(0.0, 0.0, -1.0);
+            
+            // Calculate camera right and up vectors for perspective
+            vec3 right = vec3(1.0, 0.0, 0.0);
+            vec3 up = vec3(0.0, 1.0, 0.0);
+
+            // Ray Direction
+            vec3 dir = normalize(forward + uv.x * right + uv.y * up);
+
+            // Ray March
+            float t = raymarch(origin, dir);
+            
+            vec3 finalColor = vec3(0.0); // Background (Black)
+
+            if (t > 0.0) {
+                // Calculate hit point
+                vec3 hitPoint = origin + t * dir;
+                
+                // Calculate normal
+                vec3 normal = calcNormal(hitPoint);
+
+                // Get base color (psychedelic)
+                vec3 baseColor = getPsychedelicColor(hitPoint, t);
+
+                // Apply lighting
+                vec3 litColor = shade(hitPoint, normal) * baseColor;
+
+                // Simple Fog/Atmosphere effect
+                // Makes distant objects fade into a neon color
+                vec3 fogColor = vec3(0.1, 0.1, 0.2); // Dark blueish fog
+                float fogFactor = exp(-t * 0.08); 
+                
+                finalColor = mix(fogColor, litColor, fogFactor);
+                
+                // Add a "glow" overlay based on the distance field gradient density
+                // This simulates the metaball "volume" looking more energetic
+                float energy = clamp(1.0 - t * 0.1, 0.0, 1.0);
+                finalColor += vec3(0.1, 0.1, 0.2) * energy;
+            }
+
+            // Gamma correction for better color display on sRGB screens
+            finalColor = pow(finalColor, vec3(0.9));
+
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    </script>
+
+    <script>
+        // --- JavaScript WebGL Setup & Control ---
+
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        // Resize canvas to full screen
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Shader Compilation Helper
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // Linking Program Helper
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            return program;
+        }
+
+        // Get Shader Sources
+        const vertexSource = document.getElementById('vertex-shader').text;
+        const fragmentSource = document.getElementById('fragment-shader').text;
+
+        // Compile Shaders
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+
+        // Link Program
+        const program = createProgram(gl, vertexShader, fragmentShader);
+        gl.useProgram(program);
+
+        // --- Buffer Setup (Full Screen Quad) ---
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        
+        // Create a quad covering the screen (two triangles)
+        const positions = [
+            -1.0, -1.0,
+             1.0, -1.0,
+            -1.0,  1.0,
+            -1.0,  1.0,
+             1.0, -1.0,
+             1.0,  1.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        // Link attribute "a_position" in vertex shader
+        const aPositionLocation = gl.getAttribLocation(program, "a_position");
+        gl.enableVertexAttribArray(aPositionLocation);
+        gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // --- Uniform Locations ---
+        const uResolution = gl.getUniformLocation(program, "u_resolution");
+        const uTime = gl.getUniformLocation(program, "u_time");
+
+        // --- Animation Loop ---
+        let startTime = Date.now();
+
+        function render() {
+            // Update Time
+            const currentTime = (Date.now() - startTime) / 1000.0;
+
+            // Clear Canvas
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Set Uniforms
+            gl.uniform2f(uResolution, canvas.width, canvas.height);
+            gl.uniform1f(uTime, currentTime);
+
+            // Draw Quad
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            requestAnimationFrame(render);
+        }
+
+        // Start the loop
+        requestAnimationFrame(render);
+
+    </script>
+</body>
+</html>
+```
+
+<!-- Benchmark Info -->
+<!-- Backend: llamacpp -->
+<!-- Model: Qwen3-Coder-Next-UD-Q2_K_XL.gguf -->
+<!-- Prompt: lightshow.md -->
+<!-- Time: 52.95s -->
+<!-- Fallback: False -->
